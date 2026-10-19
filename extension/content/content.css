@@ -1,0 +1,178 @@
+.ptaf-bulk-trigger {
+  box-sizing: border-box;
+  flex: 0 0 auto;
+  margin-right: 8px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid #5b8def;
+  border-radius: 4px;
+  background: transparent;
+  color: #d6e4ff;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 30px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ptaf-bulk-trigger:hover {
+  background: rgba(91, 141, 239, 0.16);
+}
+
+.ptaf-bulk-trigger:focus-visible {
+  outline: 2px solid #8eb0ff;
+  outline-offset: 2px;
+}
+
+.ptaf-bulk-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 10, 16, 0.62);
+  box-sizing: border-box;
+}
+
+.ptaf-bulk-dialog {
+  box-sizing: border-box;
+  width: min(480px, 100%);
+  padding: 20px;
+  border: 1px solid #3a445c;
+  border-radius: 8px;
+  background: #1c2333;
+  color: #e7ecf5;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 14px;
+  line-height: 1.4;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.45);
+}
+
+.ptaf-bulk-dialog * {
+  box-sizing: border-box;
+  font-family: inherit;
+}
+
+.ptaf-bulk-dialog h2 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+  color: #f4f7fb;
+}
+
+.ptaf-bulk-entity {
+  margin: 0 0 16px;
+  color: #b7c0d4;
+}
+
+.ptaf-bulk-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0 0 14px;
+  color: #d5dced;
+}
+
+.ptaf-bulk-dialog select,
+.ptaf-bulk-dialog input[type="radio"] {
+  accent-color: #5b8def;
+}
+
+.ptaf-bulk-dialog select {
+  width: 100%;
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid #4a5670;
+  border-radius: 4px;
+  background: #121826;
+  color: #f4f7fb;
+  font-size: 13px;
+}
+
+.ptaf-bulk-ops {
+  display: flex;
+  gap: 16px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.ptaf-bulk-ops legend {
+  margin-bottom: 8px;
+  padding: 0;
+  color: #d5dced;
+}
+
+.ptaf-bulk-ops label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.ptaf-bulk-confirm {
+  min-height: 2.8em;
+  margin: 0 0 12px;
+  color: #f0d48a;
+}
+
+.ptaf-bulk-status {
+  margin: 0 0 12px;
+  color: #ffb4b4;
+}
+
+.ptaf-bulk-status[data-tone="info"] {
+  color: #b7c0d4;
+}
+
+.ptaf-bulk-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ptaf-bulk-actions button {
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 4px;
+  font-size: 13px;
+  line-height: 30px;
+  cursor: pointer;
+}
+
+.ptaf-bulk-cancel {
+  border: 1px solid #4a5670;
+  background: transparent;
+  color: #e7ecf5;
+}
+
+.ptaf-bulk-submit {
+  border: 1px solid #5b8def;
+  background: #3d6fe0;
+  color: #ffffff;
+}
+
+.ptaf-bulk-actions button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.ptaf-bulk-toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 100001;
+  max-width: 360px;
+  padding: 12px 14px;
+  border: 1px solid #2f6b45;
+  border-radius: 6px;
+  background: #163224;
+  color: #d8f5e4;
+  font-family: "Segoe UI", sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
+}

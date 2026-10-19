@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "PT AF bulk actions",
+  "version": "1.0.0",
+  "description": "Apply or remove an action on all rules of a PT AF policy or user template.",
+  "content_scripts": [
+    {
+      "matches": ["https://*.af.appsec.ptsecurity.ru/*"],
+      "js": ["content/content.js"],
+      "css": ["content/content.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "host_permissions": ["https://*.af.appsec.ptsecurity.ru/*"]
+}
