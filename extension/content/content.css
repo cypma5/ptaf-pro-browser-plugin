@@ -31,6 +31,7 @@
 
 .ptaf-bulk-trigger:focus-visible,
 .ptaf-bulk-row:focus-visible,
+.ptaf-bulk-menu:focus-visible,
 .ptaf-bulk-cancel:focus-visible,
 .ptaf-bulk-submit:focus-visible {
   outline: 2px solid hsla(216, 100%, 60%, 100%);
@@ -49,7 +50,7 @@
 
 .ptaf-bulk-dialog {
   box-sizing: border-box;
-  width: min(480px, 100%);
+  width: min(560px, 100%);
   max-height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
@@ -90,6 +91,10 @@
   color: hsla(229, 15%, 80%, 100%);
 }
 
+.ptaf-bulk-field[hidden] {
+  display: none;
+}
+
 .ptaf-bulk-list {
   overflow: auto;
   max-height: 360px;
@@ -126,11 +131,24 @@
   background: hsla(216, 100%, 50%, 16%);
 }
 
+.ptaf-bulk-dialog.is-replace .ptaf-bulk-list {
+  max-height: 168px;
+}
+
 .ptaf-bulk-row-name {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
   font-size: 14px;
   font-weight: 400;
   line-height: 20px;
   color: hsla(229, 15%, 80%, 100%);
+}
+
+.ptaf-bulk-row-mark {
+  font-size: 12px;
+  line-height: 16px;
+  color: hsla(229, 15%, 60%, 100%);
 }
 
 .ptaf-bulk-row-desc {
@@ -139,64 +157,29 @@
   color: hsla(229, 15%, 60%, 100%);
 }
 
-.ptaf-bulk-ops {
-  display: flex;
-  gap: 16px;
-  margin: 0 0 16px;
-  padding: 0;
-  border: 0;
-}
-
-.ptaf-bulk-ops legend {
-  margin-bottom: 8px;
-  padding: 0;
+.ptaf-bulk-menu {
+  height: 32px;
+  width: 100%;
+  margin: 0;
+  padding: 0 8px;
+  border: 1px solid hsla(229, 15%, 30%, 100%);
+  border-radius: 8px;
+  background: hsla(229, 15%, 12%, 100%);
   color: hsla(229, 15%, 80%, 100%);
-}
-
-.ptaf-bulk-radio {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  color-scheme: dark;
   cursor: pointer;
 }
 
-.ptaf-bulk-radio input {
-  position: absolute;
-  opacity: 0;
-  width: 16px;
-  height: 16px;
-  margin: 0;
+.ptaf-bulk-menu:focus {
+  border-color: hsla(216, 100%, 60%, 100%);
 }
 
-.ptaf-bulk-radio-mark {
-  box-sizing: border-box;
-  width: 16px;
-  height: 16px;
-  border: 1px solid hsla(229, 15%, 30%, 100%);
-  border-radius: 50%;
-  background: hsla(229, 15%, 12%, 100%);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.ptaf-bulk-radio input:checked + .ptaf-bulk-radio-mark {
-  border-color: transparent;
-  background: hsla(216, 100%, 50%, 100%);
-}
-
-.ptaf-bulk-radio input:checked + .ptaf-bulk-radio-mark::after {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #fff;
-}
-
-.ptaf-bulk-radio input:focus-visible + .ptaf-bulk-radio-mark {
-  outline: 2px solid hsla(216, 100%, 60%, 100%);
-  outline-offset: 2px;
+.ptaf-bulk-menu:disabled {
+  color: hsla(229, 15%, 65%, 60%);
+  cursor: default;
 }
 
 .ptaf-bulk-confirm {

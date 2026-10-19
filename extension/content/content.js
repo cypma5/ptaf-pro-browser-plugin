@@ -36,11 +36,76 @@ function parseTarget(pathname) {
   return null;
 }
 
+const OPERATIONS = [
+  {
+    id: "add_syslog",
+    mode: "bulk",
+    bulk: "ADD",
+    label: "Add Send to syslog",
+    listLabel: "Send to syslog",
+  },
+  {
+    id: "remove_syslog",
+    mode: "bulk",
+    bulk: "DELETE",
+    label: "Remove Send to syslog",
+    listLabel: "Send to syslog",
+  },
+  {
+    id: "replace_log",
+    mode: "replace",
+    sourceKeys: ["log"],
+    targetKey: "log",
+    label: "Replace Log to DB",
+    fromLabel: "Log to DB to replace",
+    toLabel: "Replace with Log to DB",
+  },
+  {
+    id: "replace_response",
+    mode: "replace",
+    sourceKeys: ["custom_response"],
+    targetKey: "custom_response",
+    label: "Replace Custom response",
+    fromLabel: "Custom response to replace",
+    toLabel: "Replace with Custom response",
+  },
+  {
+    id: "replace_rst",
+    mode: "replace",
+    sourceKeys: ["close", "send_rst"],
+    targetKey: "custom_response",
+    label: "Replace Send RST with Custom response",
+    fromLabel: "Send RST to replace",
+    toLabel: "Replace with Custom response",
+  },
+];
+
+let actionCatalog = null;
+
 function operationsPath(target) {
   if (target.kind === "template") {
     return `/config/policies/templates/user/${target.id}/rules/operations`;
   }
   return `/config/policies/${target.id}/rules/operations`;
+}
+
+function ruleCollections(target) {
+  if (target.kind === "template") {
+    const root = `/config/policies/templates/user/${target.id}/rules`;
+    return [{ listPath: root, detailPath: (id) => `${root}/${id}`, user: false }];
+  }
+  return [
+    {
+      listPath: `/config/policies/${target.id}/rules`,
+      detailPath: (id) => `/config/policies/${target.id}/rules/${id}`,
+      user: false,
+    },
+    {
+      listPath: `/config/policies/${target.id}/user_rules`,
+      detailPath: (id) => `/config/policies/${target.id}/user_rules/${id}`,
+      user: true,
+    },
+  ];
 }
 
 function getAccessToken() {
@@ -110,19 +175,21 @@ function entityName() {
   return parts.length ? parts[parts.length - 1] : "this policy";
 }
 
-function selectedAction(dialog) {
-  const row = dialog.querySelector('.ptaf-bulk-row[aria-selected="true"]');
+function selectedAction(dialog, role) {
+  const list = dialog.querySelector(`.ptaf-bulk-list[data-role="${role || "to"}"]`);
+  const row = list && list.querySelector('.ptaf-bulk-row[aria-selected="true"]');
   if (!row || !row.dataset.id) {
     return null;
   }
   return { id: row.dataset.id, name: row.dataset.name || "" };
 }
 
-function selectActionRow(dialog, row) {
-  dialog.querySelectorAll(".ptaf-bulk-row").forEach((item) => {
+function selectActionRow(row) {
+  const list = row.closest(".ptaf-bulk-list");
+  list.querySelectorAll(".ptaf-bulk-row").forEach((item) => {
     item.setAttribute("aria-selected", item === row ? "true" : "false");
   });
-  updateConfirmation(dialog);
+  updateConfirmation(row.getRootNode());
 }
 
 function localeCandidates() {
@@ -182,15 +249,72 @@ async function loadTypeCaptions() {
   return {};
 }
 
-function confirmationText(actionName, operation) {
+function currentOperation(dialog) {
+  const menu = dialog.querySelector("#ptaf-bulk-menu");
+  const id = menu ? menu.value : OPERATIONS[0].id;
+  return OPERATIONS.find((item) => item.id === id) || OPERATIONS[0];
+}
+
+function typeOf(action) {
+  if (!actionCatalog) {
+    return {};
+  }
+  return actionCatalog.typeById[action.type_id] || {};
+}
+
+function typeKey(action) {
+  return typeOf(action).key || "";
+}
+
+function isRstSource(action) {
+  const type = typeOf(action);
+  const key = (type.key || "").toLowerCase();
+  const name = `${type.name || ""} ${action.name || ""}`.toLowerCase();
+  return key === "close" || key === "send_rst" || key.includes("rst") || /send rst|close connection/.test(name);
+}
+
+function matchesRole(action, operation, role) {
+  const key = typeKey(action);
+  if (operation.mode === "bulk") {
+    return role === "to" && key === "send_to_syslog";
+  }
+  if (role === "from") {
+    if (operation.id === "replace_rst") {
+      return isRstSource(action);
+    }
+    return operation.sourceKeys.indexOf(key) !== -1;
+  }
+  return key === operation.targetKey;
+}
+
+function actionsForRole(operation, role) {
+  if (!actionCatalog) {
+    return [];
+  }
+  return actionCatalog.actions.filter((action) => matchesRole(action, operation, role));
+}
+
+function confirmationText(dialog) {
+  const action = selectedAction(dialog, "to");
+  const operation = currentOperation(dialog);
   const name = entityName();
-  if (!actionName) {
+  if (!action) {
     return "";
   }
-  if (operation === "DELETE") {
-    return `Remove "${actionName}" from all rules of "${name}".`;
+  if (operation.mode === "bulk") {
+    if (operation.bulk === "DELETE") {
+      return `Remove "${action.name}" from all rules of "${name}".`;
+    }
+    return `Add "${action.name}" to all rules of "${name}".`;
   }
-  return `Add "${actionName}" to all rules of "${name}".`;
+  const source = selectedAction(dialog, "from");
+  if (!source) {
+    return "";
+  }
+  if (source.id === action.id) {
+    return "Choose two different actions.";
+  }
+  return `Replace "${source.name}" with "${action.name}" on all rules of "${name}".`;
 }
 
 function setStatus(dialog, message, tone) {
@@ -201,12 +325,79 @@ function setStatus(dialog, message, tone) {
 }
 
 function updateConfirmation(dialog) {
-  const operation = dialog.querySelector('input[name="ptaf-bulk-op"]:checked');
-  const action = selectedAction(dialog);
-  dialog.querySelector(".ptaf-bulk-confirm").textContent = confirmationText(
-    action && action.name,
-    operation ? operation.value : "ADD"
-  );
+  dialog.querySelector(".ptaf-bulk-confirm").textContent = confirmationText(dialog);
+  const submit = dialog.querySelector(".ptaf-bulk-submit");
+  if (!submit || applying) {
+    return;
+  }
+  const operation = currentOperation(dialog);
+  const action = selectedAction(dialog, "to");
+  if (operation.mode !== "replace") {
+    submit.disabled = !action;
+    return;
+  }
+  const source = selectedAction(dialog, "from");
+  const same = !source || !action || source.id === action.id;
+  submit.disabled = same;
+  if (source && action) {
+    setStatus(dialog, same ? "Choose two different actions." : "", same ? "error" : "info");
+  }
+}
+
+function setBusy(dialog, busy) {
+  dialog.querySelector(".ptaf-bulk-submit").disabled = busy;
+  dialog.querySelector(".ptaf-bulk-cancel").disabled = busy;
+  dialog.querySelector("#ptaf-bulk-menu").disabled = busy;
+  dialog.querySelectorAll(".ptaf-bulk-row").forEach((row) => {
+    row.disabled = busy;
+  });
+}
+
+function itemsOf(body) {
+  if (Array.isArray(body)) {
+    return body;
+  }
+  if (body && Array.isArray(body.items)) {
+    return body.items;
+  }
+  return [];
+}
+
+function readActionIds(details) {
+  if (details && Array.isArray(details.actions)) {
+    return details.actions.slice();
+  }
+  const configured = details && details.configuration && details.configuration.actions;
+  if (Array.isArray(configured)) {
+    return configured.slice();
+  }
+  return [];
+}
+
+function replaceIds(current, sourceIds, targetId) {
+  if (!current.some((id) => sourceIds.has(id))) {
+    return null;
+  }
+  const next = [];
+  const seen = new Set();
+  for (const id of current) {
+    const value = sourceIds.has(id) ? targetId : id;
+    if (seen.has(value)) {
+      continue;
+    }
+    seen.add(value);
+    next.push(value);
+  }
+  return next;
+}
+
+function userRulePatch(details, actions) {
+  const configuration = { actions };
+  const parameters = details && details.configuration && details.configuration.parameters;
+  if (Array.isArray(parameters)) {
+    configuration.parameters = parameters;
+  }
+  return { configuration };
 }
 
 function closeDialog(options) {
@@ -252,66 +443,119 @@ function actionDescription(action, typeById, captions) {
   return typeof caption === "string" ? caption : "";
 }
 
+function fillActionList(list, actions) {
+  list.replaceChildren();
+  for (const action of actions) {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "ptaf-bulk-row";
+    row.setAttribute("role", "option");
+    row.setAttribute("aria-selected", "false");
+    row.dataset.id = action.id;
+    row.dataset.name = action.name;
+    const name = document.createElement("span");
+    name.className = "ptaf-bulk-row-name";
+    name.textContent = action.name;
+    if (action.is_system) {
+      const mark = document.createElement("span");
+      mark.className = "ptaf-bulk-row-mark";
+      mark.textContent = "system";
+      name.append(mark);
+    }
+    row.append(name);
+    const description = actionDescription(action, actionCatalog.typeById, actionCatalog.captions);
+    if (description) {
+      const caption = document.createElement("span");
+      caption.className = "ptaf-bulk-row-desc";
+      caption.textContent = description;
+      row.append(caption);
+    }
+    row.addEventListener("click", () => selectActionRow(row));
+    list.append(row);
+  }
+}
+
+function renderActionList(dialog) {
+  const operation = currentOperation(dialog);
+  const submit = dialog.querySelector(".ptaf-bulk-submit");
+  const fromField = dialog.querySelector(".ptaf-bulk-from");
+  const fromList = dialog.querySelector('.ptaf-bulk-list[data-role="from"]');
+  const toList = dialog.querySelector('.ptaf-bulk-list[data-role="to"]');
+  const replacing = operation.mode === "replace";
+  dialog.querySelector(".ptaf-bulk-dialog").classList.toggle("is-replace", replacing);
+  fromField.hidden = !replacing;
+  dialog.querySelector(".ptaf-bulk-from-label").textContent = operation.fromLabel || "Replace";
+  dialog.querySelector(".ptaf-bulk-to-label").textContent = replacing ? operation.toLabel : operation.listLabel;
+  fromList.replaceChildren();
+  toList.replaceChildren();
+
+  if (!actionCatalog) {
+    submit.disabled = true;
+    return;
+  }
+
+  const fromActions = replacing ? actionsForRole(operation, "from") : [];
+  const toActions = actionsForRole(operation, "to");
+  if (replacing && !fromActions.length) {
+    setStatus(dialog, `No actions for ${operation.fromLabel}.`, "error");
+    submit.disabled = true;
+    updateConfirmation(dialog);
+    return;
+  }
+  if (!toActions.length) {
+    const empty = operation.mode === "bulk"
+      ? "No Send to syslog actions."
+      : `No actions for ${operation.toLabel}.`;
+    setStatus(dialog, empty, "error");
+    submit.disabled = true;
+    updateConfirmation(dialog);
+    return;
+  }
+
+  if (replacing) {
+    fillActionList(fromList, fromActions);
+    selectActionRow(fromList.querySelector(".ptaf-bulk-row"));
+  }
+  fillActionList(toList, toActions);
+  const fromId = replacing ? fromList.querySelector('.ptaf-bulk-row[aria-selected="true"]').dataset.id : "";
+  const other = replacing
+    ? toList.querySelector(`.ptaf-bulk-row:not([data-id="${CSS.escape(fromId)}"])`)
+    : null;
+  selectActionRow(other || toList.querySelector(".ptaf-bulk-row"));
+  const chosenFrom = replacing ? selectedAction(dialog, "from") : null;
+  const chosenTo = selectedAction(dialog, "to");
+  const sameChoice = Boolean(chosenFrom && chosenTo && chosenFrom.id === chosenTo.id);
+  submit.disabled = sameChoice;
+  setStatus(dialog, sameChoice ? "Choose two different actions." : "", sameChoice ? "error" : "info");
+}
+
 async function loadActions(dialog) {
-  const list = dialog.querySelector(".ptaf-bulk-list");
   const submit = dialog.querySelector(".ptaf-bulk-submit");
   submit.disabled = true;
+  actionCatalog = null;
   setStatus(dialog, "Loading actions...", "info");
 
   try {
-    if (!dialog.isConnected) {
-      return;
-    }
     const [actionsBody, typesBody, captions] = await Promise.all([
       api("/config/actions"),
       api("/config/action_types"),
       loadTypeCaptions(),
     ]);
+    if (!dialog.isConnected) {
+      return;
+    }
     const typeById = {};
-    for (const type of (typesBody && typesBody.items) || []) {
+    for (const type of itemsOf(typesBody)) {
       typeById[type.id] = type;
     }
-    const actions = ((actionsBody && actionsBody.items) || []).slice().sort((left, right) => {
+    const actions = itemsOf(actionsBody).slice().sort((left, right) => {
       if (left.is_system !== right.is_system) {
         return left.is_system ? 1 : -1;
       }
       return left.name.localeCompare(right.name);
     });
-
-    list.replaceChildren();
-    if (!actions.length) {
-      setStatus(dialog, "No actions found.", "error");
-      return;
-    }
-
-    for (const action of actions) {
-      const row = document.createElement("button");
-      row.type = "button";
-      row.className = "ptaf-bulk-row";
-      row.setAttribute("role", "option");
-      row.setAttribute("aria-selected", "false");
-      row.dataset.id = action.id;
-      row.dataset.name = action.name;
-      const name = document.createElement("span");
-      name.className = "ptaf-bulk-row-name";
-      name.textContent = action.name;
-      row.append(name);
-      const description = actionDescription(action, typeById, captions);
-      if (description) {
-        const caption = document.createElement("span");
-        caption.className = "ptaf-bulk-row-desc";
-        caption.textContent = description;
-        row.append(caption);
-      }
-      row.addEventListener("click", () => selectActionRow(dialog, row));
-      list.append(row);
-    }
-    if (!dialog.isConnected) {
-      return;
-    }
-    selectActionRow(dialog, list.querySelector(".ptaf-bulk-row"));
-    submit.disabled = false;
-    setStatus(dialog, "", "info");
+    actionCatalog = { actions, typeById, captions };
+    renderActionList(dialog);
   } catch (error) {
     if (!dialog.isConnected) {
       return;
@@ -320,39 +564,102 @@ async function loadActions(dialog) {
   }
 }
 
+async function applyBulk(dialog, target, operation, action) {
+  setStatus(dialog, "Applying...", "info");
+  await api(operationsPath(target), {
+    method: "POST",
+    body: {
+      action_id: action.id,
+      type: operation.bulk,
+    },
+  });
+  applying = false;
+  closeDialog();
+  showToast(operation.bulk === "DELETE" ? "Action removed from all rules." : "Action added to all rules.");
+}
+
+async function applyReplace(dialog, target, source, action) {
+  const sourceIds = new Set([source.id]);
+  const rules = [];
+  for (const collection of ruleCollections(target)) {
+    const body = await api(collection.listPath);
+    for (const rule of itemsOf(body)) {
+      rules.push({
+        id: rule.id,
+        name: rule.name || rule.id,
+        user: collection.user,
+        detailPath: collection.detailPath(rule.id),
+      });
+    }
+  }
+
+  let changed = 0;
+  let failed = 0;
+  const failures = [];
+  for (let index = 0; index < rules.length; index += 1) {
+    const rule = rules[index];
+    setStatus(
+      dialog,
+      `Checking rules: ${index + 1} of ${rules.length}. Replaced: ${changed}.`,
+      "info"
+    );
+    try {
+      const details = await api(rule.detailPath);
+      const next = replaceIds(readActionIds(details), sourceIds, action.id);
+      if (!next) {
+        continue;
+      }
+      await api(rule.detailPath, {
+        method: "PATCH",
+        body: rule.user ? userRulePatch(details, next) : { actions: next },
+      });
+      changed += 1;
+    } catch (error) {
+      failed += 1;
+      if (failures.length < 3) {
+        failures.push(`${rule.name}: ${error.message}`);
+      }
+    }
+  }
+
+  applying = false;
+  if (failed) {
+    setBusy(dialog, false);
+    const summary = `Replaced in ${changed} of ${rules.length} rules. Failed: ${failed}.`;
+    setStatus(dialog, `${summary} ${failures.join(" ")}`, "error");
+    return;
+  }
+  closeDialog();
+  showToast(`Replaced the action in ${changed} of ${rules.length} rules.`);
+}
+
 async function applyOperation(dialog, target) {
-  const operation = dialog.querySelector('input[name="ptaf-bulk-op"]:checked');
-  const action = selectedAction(dialog);
-  if (!action || !operation) {
+  const operation = currentOperation(dialog);
+  const action = selectedAction(dialog, "to");
+  const source = operation.mode === "replace" ? selectedAction(dialog, "from") : null;
+  if (!action || applying) {
+    return;
+  }
+  if (operation.mode === "replace" && (!source || source.id === action.id)) {
+    setStatus(dialog, "Choose two different actions.", "error");
     return;
   }
 
   applying = true;
-  dialog.querySelector(".ptaf-bulk-submit").disabled = true;
-  dialog.querySelector(".ptaf-bulk-cancel").disabled = true;
-  dialog.querySelectorAll(".ptaf-bulk-row").forEach((row) => {
-    row.disabled = true;
-  });
-  setStatus(dialog, "Applying...", "info");
+  setBusy(dialog, true);
 
   try {
-    await api(operationsPath(target), {
-      method: "POST",
-      body: {
-        action_id: action.id,
-        type: operation.value,
-      },
-    });
-    applying = false;
-    closeDialog();
-    showToast("Action applied to all rules.");
+    if (operation.mode === "bulk") {
+      await applyBulk(dialog, target, operation, action);
+    } else {
+      await applyReplace(dialog, target, source, action);
+    }
   } catch (error) {
     applying = false;
-    dialog.querySelector(".ptaf-bulk-submit").disabled = false;
-    dialog.querySelector(".ptaf-bulk-cancel").disabled = false;
-    dialog.querySelectorAll(".ptaf-bulk-row").forEach((row) => {
-      row.disabled = false;
-    });
+    if (!dialog.isConnected) {
+      return;
+    }
+    setBusy(dialog, false);
     setStatus(dialog, error.message || "Request failed.", "error");
   }
 }
@@ -374,14 +681,18 @@ function openDialog(target) {
     <div class="ptaf-bulk-dialog" role="dialog" aria-modal="true" aria-labelledby="ptaf-bulk-title" tabindex="-1">
       <h2 id="ptaf-bulk-title">Apply action to all rules</h2>
       <p class="ptaf-bulk-entity"></p>
-      <div class="ptaf-bulk-field">Action
-        <div class="ptaf-bulk-list" role="listbox" aria-label="Action"></div>
+      <div class="ptaf-bulk-field">
+        <label for="ptaf-bulk-menu">Operation</label>
+        <select id="ptaf-bulk-menu" class="ptaf-bulk-menu"></select>
       </div>
-      <fieldset class="ptaf-bulk-ops">
-        <legend>Operation</legend>
-        <label class="ptaf-bulk-radio"><input type="radio" name="ptaf-bulk-op" value="ADD" checked><span class="ptaf-bulk-radio-mark"></span>Add</label>
-        <label class="ptaf-bulk-radio"><input type="radio" name="ptaf-bulk-op" value="DELETE"><span class="ptaf-bulk-radio-mark"></span>Remove</label>
-      </fieldset>
+      <div class="ptaf-bulk-field ptaf-bulk-from" hidden>
+        <span class="ptaf-bulk-from-label">Replace</span>
+        <div class="ptaf-bulk-list" data-role="from" role="listbox" aria-label="Action to replace"></div>
+      </div>
+      <div class="ptaf-bulk-field">
+        <span class="ptaf-bulk-to-label">Send to syslog</span>
+        <div class="ptaf-bulk-list" data-role="to" role="listbox" aria-label="Action"></div>
+      </div>
       <p class="ptaf-bulk-confirm"></p>
       <p class="ptaf-bulk-status" hidden></p>
       <div class="ptaf-bulk-actions">
@@ -392,6 +703,13 @@ function openDialog(target) {
   `;
   shadow.append(backdrop);
 
+  const menu = shadow.querySelector("#ptaf-bulk-menu");
+  for (const operation of OPERATIONS) {
+    const option = document.createElement("option");
+    option.value = operation.id;
+    option.textContent = operation.label;
+    menu.append(option);
+  }
   shadow.querySelector(".ptaf-bulk-entity").textContent = `Target: ${entityName()}`;
   backdrop.addEventListener("click", (event) => {
     if (event.target === backdrop) {
@@ -399,8 +717,10 @@ function openDialog(target) {
     }
   });
   shadow.querySelector(".ptaf-bulk-cancel").addEventListener("click", closeDialog);
-  shadow.querySelectorAll('input[name="ptaf-bulk-op"]').forEach((input) => {
-    input.addEventListener("change", () => updateConfirmation(shadow));
+  menu.addEventListener("change", () => {
+    if (actionCatalog) {
+      renderActionList(shadow);
+    }
   });
   shadow.querySelector(".ptaf-bulk-submit").addEventListener("click", () => {
     applyOperation(shadow, target);
