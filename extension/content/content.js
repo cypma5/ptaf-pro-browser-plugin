@@ -14,14 +14,185 @@ let dialogHost = null;
 let applying = false;
 let syncFrame = 0;
 let returnFocus = null;
+let domObserver = null;
+let themeObserver = null;
+let extensionStopped = false;
+let detectedTheme = null;
+
+function stylesheetUrl() {
+  try {
+    if (!chrome.runtime || !chrome.runtime.id) {
+      return null;
+    }
+    return chrome.runtime.getURL("content/content.css");
+  } catch (error) {
+    return null;
+  }
+}
+
+function themeFromText(value) {
+  if (!value || typeof value !== "string") {
+    return null;
+  }
+  const tokens = value.toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+  let light = false;
+  let dark = false;
+  for (const token of tokens) {
+    if (token === "light" || token === "lighttheme") {
+      light = true;
+    }
+    if (token === "dark" || token === "darktheme") {
+      dark = true;
+    }
+  }
+  if (light && !dark) {
+    return "light";
+  }
+  if (dark && !light) {
+    return "dark";
+  }
+  return null;
+}
+
+function backgroundLuminance(node) {
+  if (!node || node.nodeType !== 1) {
+    return null;
+  }
+  const match = getComputedStyle(node).backgroundColor.match(
+    /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)(?:[,\s/]+([\d.]+))?/i
+  );
+  if (!match) {
+    return null;
+  }
+  const alpha = match[4] == null ? 1 : Number(match[4]);
+  if (alpha < 0.6) {
+    return null;
+  }
+  const channels = [match[1], match[2], match[3]].map((part) => {
+    const scaled = Number(part) / 255;
+    return scaled <= 0.03928 ? scaled / 12.92 : ((scaled + 0.055) / 1.055) ** 2.4;
+  });
+  return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+}
+
+function namedTheme() {
+  const nodes = [document.documentElement, document.body];
+  for (const node of nodes) {
+    if (!node) {
+      continue;
+    }
+    const scheme = getComputedStyle(node).colorScheme;
+    const chunks = [
+      node.className,
+      node.getAttribute("data-theme"),
+      node.getAttribute("data-color-scheme"),
+      node.getAttribute("data-kbq-theme"),
+      scheme === "light" || scheme === "dark" ? scheme : "",
+    ];
+    for (const chunk of chunks) {
+      const theme = themeFromText(chunk);
+      if (theme) {
+        return theme;
+      }
+    }
+  }
+  return null;
+}
+
+function surfaceLuminance() {
+  for (const node of [document.body, document.documentElement]) {
+    const direct = backgroundLuminance(node);
+    if (direct != null) {
+      return direct;
+    }
+  }
+  const skip = new Set([BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-traffic-open", "ptaf-traffic-dialog"]);
+  let node = document.elementFromPoint(
+    Math.max(0, Math.floor(window.innerWidth / 2)),
+    Math.max(0, Math.floor(window.innerHeight / 2))
+  );
+  for (let guard = 0; node && guard < 12; guard += 1) {
+    if (skip.has(node.id)) {
+      node = node.parentElement;
+      continue;
+    }
+    const sampled = backgroundLuminance(node);
+    if (sampled != null) {
+      return sampled;
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+function pageTheme() {
+  const named = namedTheme();
+  if (named) {
+    detectedTheme = named;
+    return named;
+  }
+  const luminance = surfaceLuminance();
+  if (luminance != null) {
+    detectedTheme = luminance > 0.55 ? "light" : "dark";
+    return detectedTheme;
+  }
+  return detectedTheme || "dark";
+}
+
+function syncTheme() {
+  const theme = pageTheme();
+  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID]) {
+    const node = document.getElementById(id);
+    const root = node && node.shadowRoot && node.shadowRoot.querySelector(".ptaf-theme");
+    if (root) {
+      root.dataset.theme = theme;
+    }
+  }
+}
+
+function stopExtension() {
+  if (extensionStopped) {
+    return;
+  }
+  extensionStopped = true;
+  if (syncFrame) {
+    cancelAnimationFrame(syncFrame);
+    syncFrame = 0;
+  }
+  if (domObserver) {
+    domObserver.disconnect();
+    domObserver = null;
+  }
+  if (themeObserver) {
+    themeObserver.disconnect();
+    themeObserver = null;
+  }
+  document.removeEventListener("keydown", onKeyDown);
+  window.removeEventListener("popstate", scheduleSync);
+  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID]) {
+    const node = document.getElementById(id);
+    if (node) {
+      node.remove();
+    }
+  }
+  dialogHost = null;
+}
 
 function attachUi(host) {
+  const href = stylesheetUrl();
+  if (!href) {
+    stopExtension();
+    return null;
+  }
   const shadow = host.attachShadow({ mode: "open" });
   const link = document.createElement("link");
   link.rel = "stylesheet";
-  link.href = chrome.runtime.getURL("content/content.css");
-  shadow.append(link);
-  return shadow;
+  link.href = href;
+  const theme = document.createElement("div");
+  theme.className = "ptaf-theme";
+  theme.dataset.theme = pageTheme();
+  shadow.append(link, theme);
+  return theme;
 }
 
 function parseTarget(pathname) {
@@ -424,6 +595,9 @@ function showToast(message) {
   host.id = TOAST_ID;
   host.style.cssText = "all:initial;display:block;position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:360px;";
   const shadow = attachUi(host);
+  if (!shadow) {
+    return;
+  }
   const toast = document.createElement("div");
   toast.className = "ptaf-bulk-toast";
   toast.textContent = message;
@@ -679,11 +853,15 @@ function openDialog(target) {
   host.id = DIALOG_ID;
   host.style.cssText = "all:initial;display:block;position:fixed;inset:0;z-index:2147483646;";
   const shadow = attachUi(host);
+  if (!shadow) {
+    return;
+  }
   const backdrop = document.createElement("div");
   backdrop.className = "ptaf-bulk-backdrop";
   backdrop.innerHTML = `
     <div class="ptaf-bulk-dialog" role="dialog" aria-modal="true" aria-labelledby="ptaf-bulk-title" tabindex="-1">
       <h2 id="ptaf-bulk-title">Действия для всех правил</h2>
+      <p class="ptaf-bulk-warning">Это дополнительный модуль (addon). Компания Positive Technologies его не поддерживает. Используйте на свой страх и риск.</p>
       <p class="ptaf-bulk-entity"></p>
       <div class="ptaf-bulk-field">
         <label for="ptaf-bulk-menu">Операция</label>
@@ -748,6 +926,9 @@ function createButton() {
   host.id = BUTTON_ID;
   host.style.cssText = "all:initial;display:inline-flex;flex:0 0 auto;margin-right:8px;vertical-align:middle;";
   const shadow = attachUi(host);
+  if (!shadow) {
+    return null;
+  }
   const button = document.createElement("button");
   button.type = "button";
   button.className = "ptaf-bulk-trigger";
@@ -766,6 +947,11 @@ function createButton() {
 }
 
 function syncButton() {
+  if (extensionStopped || !stylesheetUrl()) {
+    stopExtension();
+    return;
+  }
+  syncTheme();
   const target = parseTarget(location.pathname);
   const host = document.querySelector(".top-panel .rules-actions");
   const existing = document.getElementById(BUTTON_ID);
@@ -787,11 +973,14 @@ function syncButton() {
     return;
   }
 
-  host.prepend(createButton());
+  const button = createButton();
+  if (button) {
+    host.prepend(button);
+  }
 }
 
 function scheduleSync() {
-  if (syncFrame) {
+  if (extensionStopped || syncFrame) {
     return;
   }
   syncFrame = requestAnimationFrame(() => {
@@ -829,8 +1018,20 @@ function hookHistory() {
   window.addEventListener("popstate", scheduleSync);
 }
 
+function watchTheme() {
+  const options = {
+    attributes: true,
+    attributeFilter: ["class", "style", "data-theme", "data-color-scheme", "data-kbq-theme"],
+  };
+  themeObserver = new MutationObserver(() => syncTheme());
+  themeObserver.observe(document.documentElement, options);
+  if (document.body) {
+    themeObserver.observe(document.body, options);
+  }
+}
+
 function watchDom() {
-  const observer = new MutationObserver((mutations) => {
+  domObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       if (nodeRelevant(mutation.target)) {
         scheduleSync();
@@ -850,10 +1051,11 @@ function watchDom() {
       }
     }
   });
-  observer.observe(document.body, { childList: true, subtree: true });
+  domObserver.observe(document.body, { childList: true, subtree: true });
 }
 
 hookHistory();
 document.addEventListener("keydown", onKeyDown);
 watchDom();
+watchTheme();
 scheduleSync();

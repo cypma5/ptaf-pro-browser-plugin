@@ -1,6 +1,57 @@
-:host {
+.ptaf-theme {
+  box-sizing: border-box;
+  height: 100%;
+  --ptaf-text: hsla(229, 15%, 80%, 100%);
+  --ptaf-text-secondary: hsla(229, 15%, 60%, 100%);
+  --ptaf-text-muted: hsla(229, 15%, 70%, 100%);
+  --ptaf-hover: hsla(229, 15%, 50%, 16%);
+  --ptaf-surface: hsla(229, 15%, 15%, 100%);
+  --ptaf-field: hsla(229, 15%, 12%, 100%);
+  --ptaf-line: hsla(229, 15%, 22%, 100%);
+  --ptaf-border: hsla(229, 15%, 30%, 100%);
+  --ptaf-overlay: hsla(229, 15%, 6%, 64%);
+  --ptaf-contrast: hsla(229, 15%, 90%, 100%);
+  --ptaf-contrast-text: hsla(229, 15%, 15%, 100%);
+  --ptaf-contrast-hover: hsla(229, 15%, 80%, 100%);
+  --ptaf-warning-bg: hsla(38, 100%, 9%, 100%);
+  --ptaf-warning-fg: hsla(38, 100%, 60%, 100%);
+  --ptaf-selected: hsla(216, 100%, 50%, 16%);
+  --ptaf-selected-bar: hsla(216, 100%, 65%, 100%);
+  --ptaf-focus: hsla(216, 100%, 60%, 100%);
+  --ptaf-accent: hsla(216, 100%, 50%, 100%);
+  --ptaf-error: hsla(7, 97%, 60%, 100%);
+  --ptaf-success: hsla(104, 64%, 45%, 100%);
+  --ptaf-disabled: hsla(229, 15%, 65%, 60%);
+  --ptaf-ring: hsla(229, 100%, 85%, 15%);
+  color-scheme: dark;
   font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
-  color: hsla(229, 15%, 80%, 100%);
+  color: var(--ptaf-text);
+}
+
+.ptaf-theme[data-theme="light"] {
+  --ptaf-text: hsla(229, 15%, 15%, 100%);
+  --ptaf-text-secondary: hsla(229, 15%, 38%, 100%);
+  --ptaf-text-muted: hsla(229, 15%, 42%, 100%);
+  --ptaf-hover: hsla(229, 15%, 40%, 10%);
+  --ptaf-surface: hsla(0, 0%, 100%, 100%);
+  --ptaf-field: hsla(229, 15%, 97%, 100%);
+  --ptaf-line: hsla(229, 15%, 88%, 100%);
+  --ptaf-border: hsla(229, 15%, 74%, 100%);
+  --ptaf-overlay: hsla(229, 15%, 20%, 32%);
+  --ptaf-contrast: hsla(229, 15%, 15%, 100%);
+  --ptaf-contrast-text: hsla(0, 0%, 100%, 100%);
+  --ptaf-contrast-hover: hsla(229, 15%, 28%, 100%);
+  --ptaf-warning-bg: hsla(38, 100%, 92%, 100%);
+  --ptaf-warning-fg: hsla(28, 80%, 28%, 100%);
+  --ptaf-selected: hsla(216, 100%, 46%, 12%);
+  --ptaf-selected-bar: hsla(216, 100%, 46%, 100%);
+  --ptaf-focus: hsla(216, 100%, 46%, 100%);
+  --ptaf-accent: hsla(216, 100%, 46%, 100%);
+  --ptaf-error: hsla(7, 75%, 40%, 100%);
+  --ptaf-success: hsla(122, 45%, 30%, 100%);
+  --ptaf-disabled: hsla(229, 15%, 40%, 45%);
+  --ptaf-ring: hsla(229, 15%, 20%, 12%);
+  color-scheme: light;
 }
 
 .ptaf-bulk-trigger,
@@ -17,7 +68,7 @@
   border: 1px solid transparent;
   border-radius: 8px;
   background: transparent;
-  color: hsla(229, 15%, 80%, 100%);
+  color: var(--ptaf-text);
   font-size: 13px;
   font-weight: 400;
   line-height: 16px;
@@ -26,14 +77,14 @@
 }
 
 .ptaf-bulk-trigger:hover {
-  background: hsla(229, 15%, 50%, 16%);
+  background: var(--ptaf-hover);
 }
 
 .ptaf-bulk-trigger:focus-visible,
 .ptaf-bulk-row:focus-visible,
 .ptaf-bulk-cancel:focus-visible,
 .ptaf-bulk-submit:focus-visible {
-  outline: 2px solid hsla(216, 100%, 60%, 100%);
+  outline: 2px solid var(--ptaf-focus);
   outline-offset: 2px;
 }
 
@@ -44,7 +95,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: hsla(229, 15%, 6%, 64%);
+  background: var(--ptaf-overlay);
 }
 
 .ptaf-bulk-dialog {
@@ -55,12 +106,12 @@
   flex-direction: column;
   padding: 16px 24px 20px;
   border-radius: 8px;
-  background: hsla(229, 15%, 15%, 100%);
-  color: hsla(229, 15%, 80%, 100%);
+  background: var(--ptaf-surface);
+  color: var(--ptaf-text);
   font-size: 14px;
   line-height: 20px;
   box-shadow:
-    0 0 0 1px hsla(229, 100%, 85%, 15%),
+    0 0 0 1px var(--ptaf-ring),
     0 12px 24px rgb(0 0 0 / 16%);
 }
 
@@ -73,12 +124,22 @@
   font-size: 16px;
   font-weight: 600;
   line-height: 24px;
-  color: hsla(229, 15%, 80%, 100%);
+  color: var(--ptaf-text);
+}
+
+.ptaf-bulk-warning {
+  margin: 8px 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ptaf-warning-bg);
+  color: var(--ptaf-warning-fg);
+  font-size: 13px;
+  line-height: 18px;
 }
 
 .ptaf-bulk-entity {
   margin: 0 0 16px;
-  color: hsla(229, 15%, 60%, 100%);
+  color: var(--ptaf-text-secondary);
 }
 
 .ptaf-bulk-field {
@@ -87,7 +148,7 @@
   gap: 6px;
   margin: 0 0 12px;
   min-height: 0;
-  color: hsla(229, 15%, 80%, 100%);
+  color: var(--ptaf-text);
 }
 
 .ptaf-bulk-field[hidden],
@@ -100,7 +161,7 @@
 .ptaf-bulk-to-label {
   font-size: 12px;
   line-height: 16px;
-  color: hsla(229, 15%, 60%, 100%);
+  color: var(--ptaf-text-secondary);
 }
 
 .ptaf-bulk-arrow {
@@ -116,8 +177,8 @@
   align-items: center;
   justify-content: center;
   border-radius: 50%;
-  background: hsla(229, 15%, 22%, 100%);
-  color: hsla(229, 15%, 80%, 100%);
+  background: var(--ptaf-line);
+  color: var(--ptaf-text);
   font-size: 14px;
   line-height: 16px;
 }
@@ -126,9 +187,9 @@
   overflow: auto;
   max-height: 280px;
   margin: 0;
-  border: 1px solid hsla(229, 15%, 22%, 100%);
+  border: 1px solid var(--ptaf-line);
   border-radius: 8px;
-  background: hsla(229, 15%, 12%, 100%);
+  background: var(--ptaf-field);
 }
 
 .ptaf-bulk-row {
@@ -142,22 +203,22 @@
   border: 0;
   border-radius: 0;
   background: transparent;
-  color: hsla(229, 15%, 80%, 100%);
+  color: var(--ptaf-text);
   text-align: left;
   cursor: pointer;
 }
 
 .ptaf-bulk-row + .ptaf-bulk-row {
-  border-top: 1px solid hsla(229, 15%, 22%, 100%);
+  border-top: 1px solid var(--ptaf-line);
 }
 
 .ptaf-bulk-row:hover {
-  background: hsla(229, 15%, 50%, 16%);
+  background: var(--ptaf-hover);
 }
 
 .ptaf-bulk-row[aria-selected="true"] {
-  background: hsla(216, 100%, 50%, 16%);
-  box-shadow: inset 3px 0 0 hsla(216, 100%, 65%, 100%);
+  background: var(--ptaf-selected);
+  box-shadow: inset 3px 0 0 var(--ptaf-selected-bar);
 }
 
 .ptaf-bulk-dialog.is-replace .ptaf-bulk-list {
@@ -176,23 +237,23 @@
   font-size: 14px;
   font-weight: 400;
   line-height: 20px;
-  color: hsla(229, 15%, 80%, 100%);
+  color: var(--ptaf-text);
 }
 
 .ptaf-bulk-row-mark {
   flex: 0 0 auto;
   padding: 0 6px;
   border-radius: 4px;
-  background: hsla(229, 15%, 22%, 100%);
+  background: var(--ptaf-line);
   font-size: 11px;
   line-height: 16px;
-  color: hsla(229, 15%, 70%, 100%);
+  color: var(--ptaf-text-muted);
 }
 
 .ptaf-bulk-row-desc {
   font-size: 12px;
   line-height: 16px;
-  color: hsla(229, 15%, 60%, 100%);
+  color: var(--ptaf-text-secondary);
 }
 
 .ptaf-bulk-menu {
@@ -200,24 +261,24 @@
   width: 100%;
   margin: 0;
   padding: 0 8px;
-  border: 1px solid hsla(229, 15%, 30%, 100%);
+  border: 1px solid var(--ptaf-border);
   border-radius: 8px;
-  background: hsla(229, 15%, 12%, 100%);
-  color: hsla(229, 15%, 80%, 100%);
+  background: var(--ptaf-field);
+  color: var(--ptaf-text);
   font-family: inherit;
   font-size: 14px;
   line-height: 20px;
-  color-scheme: dark;
+  color-scheme: inherit;
   cursor: pointer;
 }
 
 .ptaf-bulk-menu:focus {
-  border-color: hsla(216, 100%, 60%, 100%);
+  border-color: var(--ptaf-focus);
   outline: none;
 }
 
 .ptaf-bulk-menu:disabled {
-  color: hsla(229, 15%, 65%, 60%);
+  color: var(--ptaf-disabled);
   cursor: default;
 }
 
@@ -226,8 +287,8 @@
   margin: 0 0 12px;
   padding: 8px 12px;
   border-radius: 8px;
-  background: hsla(38, 100%, 9%, 100%);
-  color: hsla(38, 100%, 60%, 100%);
+  background: var(--ptaf-warning-bg);
+  color: var(--ptaf-warning-fg);
 }
 
 .ptaf-bulk-confirm:empty {
@@ -236,11 +297,11 @@
 
 .ptaf-bulk-status {
   margin: 0 0 12px;
-  color: hsla(7, 97%, 60%, 100%);
+  color: var(--ptaf-error);
 }
 
 .ptaf-bulk-status[data-tone="info"] {
-  color: hsla(229, 15%, 60%, 100%);
+  color: var(--ptaf-text-secondary);
 }
 
 .ptaf-bulk-actions {
@@ -262,26 +323,26 @@
 
 .ptaf-bulk-cancel {
   background: transparent;
-  color: hsla(229, 15%, 80%, 100%);
+  color: var(--ptaf-text);
 }
 
 .ptaf-bulk-cancel:hover {
-  background: hsla(229, 15%, 50%, 16%);
+  background: var(--ptaf-hover);
 }
 
 .ptaf-bulk-submit {
-  background: hsla(229, 15%, 90%, 100%);
-  color: hsla(229, 15%, 15%, 100%);
+  background: var(--ptaf-contrast);
+  color: var(--ptaf-contrast-text);
 }
 
 .ptaf-bulk-submit:hover {
-  background: hsla(229, 15%, 80%, 100%);
+  background: var(--ptaf-contrast-hover);
 }
 
 .ptaf-bulk-actions button:disabled,
 .ptaf-bulk-row:disabled {
-  color: hsla(229, 15%, 65%, 60%);
-  background: hsla(229, 15%, 50%, 16%);
+  color: var(--ptaf-disabled);
+  background: var(--ptaf-hover);
   cursor: default;
 }
 
@@ -293,9 +354,229 @@
   max-width: 360px;
   padding: 12px 14px;
   border-radius: 8px;
-  background: hsla(229, 15%, 15%, 100%);
-  color: hsla(104, 64%, 45%, 100%);
+  background: var(--ptaf-surface);
+  color: var(--ptaf-success);
   font-size: 13px;
   line-height: 16px;
-  box-shadow: 0 0 0 1px hsla(229, 100%, 85%, 15%);
+  box-shadow: 0 0 0 1px var(--ptaf-ring);
+}
+
+.ptaf-traffic-open {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--ptaf-contrast);
+  color: var(--ptaf-contrast-text);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  cursor: pointer;
+}
+
+.ptaf-traffic-open:hover {
+  background: var(--ptaf-contrast-hover);
+}
+
+.ptaf-traffic-backdrop {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--ptaf-overlay);
+}
+
+.ptaf-traffic-dialog {
+  box-sizing: border-box;
+  width: min(640px, 100%);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  padding: 16px 24px 20px;
+  border-radius: 8px;
+  background: var(--ptaf-surface);
+  color: var(--ptaf-text);
+  font-size: 14px;
+  line-height: 20px;
+  box-shadow:
+    0 0 0 1px var(--ptaf-ring),
+    0 12px 24px rgb(0 0 0 / 16%);
+}
+
+.ptaf-traffic-dialog * {
+  box-sizing: border-box;
+}
+
+.ptaf-traffic-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.ptaf-traffic-warning {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--ptaf-warning-bg);
+  color: var(--ptaf-warning-fg);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ptaf-traffic-search,
+.ptaf-traffic-input {
+  width: 100%;
+  border: 1px solid var(--ptaf-border);
+  border-radius: 8px;
+  background: var(--ptaf-field);
+  color: var(--ptaf-text);
+  font-family: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  color-scheme: inherit;
+}
+
+.ptaf-traffic-search {
+  height: 32px;
+  margin: 12px 0;
+  padding: 0 8px;
+}
+
+.ptaf-traffic-search:focus,
+.ptaf-traffic-input:focus {
+  border-color: var(--ptaf-focus);
+  outline: none;
+}
+
+.ptaf-traffic-form {
+  overflow: auto;
+  min-height: 0;
+  margin: 0 -24px;
+  padding: 0 24px 8px;
+}
+
+.ptaf-traffic-group {
+  margin: 0 0 16px;
+}
+
+.ptaf-traffic-group h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 16px;
+  color: var(--ptaf-text-secondary);
+}
+
+.ptaf-traffic-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0 0 10px;
+}
+
+.ptaf-traffic-caption {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ptaf-traffic-key {
+  color: var(--ptaf-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ptaf-traffic-input {
+  min-height: 32px;
+  padding: 6px 8px;
+}
+
+.ptaf-traffic-check {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--ptaf-accent);
+}
+
+.ptaf-traffic-input:disabled,
+.ptaf-traffic-check:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.ptaf-traffic-lock {
+  color: var(--ptaf-warning-fg);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ptaf-traffic-empty {
+  margin: 0;
+  color: var(--ptaf-text-secondary);
+}
+
+.ptaf-traffic-status {
+  margin: 8px 0 12px;
+  color: var(--ptaf-error);
+}
+
+.ptaf-traffic-status[data-tone="info"] {
+  color: var(--ptaf-text-secondary);
+}
+
+.ptaf-traffic-status[hidden] {
+  display: none;
+}
+
+.ptaf-traffic-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 16px;
+}
+
+.ptaf-traffic-cancel,
+.ptaf-traffic-save {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.ptaf-traffic-cancel {
+  background: transparent;
+  color: var(--ptaf-text);
+}
+
+.ptaf-traffic-cancel:hover {
+  background: var(--ptaf-hover);
+}
+
+.ptaf-traffic-save {
+  background: var(--ptaf-contrast);
+  color: var(--ptaf-contrast-text);
+}
+
+.ptaf-traffic-save:hover {
+  background: var(--ptaf-contrast-hover);
+}
+
+.ptaf-traffic-actions button:disabled {
+  color: var(--ptaf-disabled);
+  background: var(--ptaf-hover);
+  cursor: default;
+}
+
+.ptaf-traffic-cancel:disabled {
+  background: transparent;
 }

@@ -1,2 +1,4 @@
 CHROMEWEBSTORE.md
 openapi.json
+traffic_settings.py
+.cursor/rules/bump-extension-version.mdc
