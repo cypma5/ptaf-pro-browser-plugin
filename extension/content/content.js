@@ -41,42 +41,42 @@ const OPERATIONS = [
     id: "add_syslog",
     mode: "bulk",
     bulk: "ADD",
-    label: "Add Send to syslog",
-    listLabel: "Send to syslog",
+    label: "Добавить Send to syslog",
+    listLabel: "Действие",
   },
   {
     id: "remove_syslog",
     mode: "bulk",
     bulk: "DELETE",
-    label: "Remove Send to syslog",
-    listLabel: "Send to syslog",
+    label: "Удалить Send to syslog",
+    listLabel: "Действие",
   },
   {
     id: "replace_log",
     mode: "replace",
     sourceKeys: ["log"],
     targetKey: "log",
-    label: "Replace Log to DB",
-    fromLabel: "Log to DB to replace",
-    toLabel: "Replace with Log to DB",
+    label: "Заменить Log to DB",
+    fromLabel: "Что меняем",
+    toLabel: "На что меняем",
   },
   {
     id: "replace_response",
     mode: "replace",
     sourceKeys: ["custom_response"],
     targetKey: "custom_response",
-    label: "Replace Custom response",
-    fromLabel: "Custom response to replace",
-    toLabel: "Replace with Custom response",
+    label: "Заменить Custom response",
+    fromLabel: "Что меняем",
+    toLabel: "На что меняем",
   },
   {
     id: "replace_rst",
     mode: "replace",
     sourceKeys: ["close", "send_rst"],
     targetKey: "custom_response",
-    label: "Replace Send RST with Custom response",
-    fromLabel: "Send RST to replace",
-    toLabel: "Replace with Custom response",
+    label: "Заменить Send RST на Custom response",
+    fromLabel: "Что меняем",
+    toLabel: "На что меняем",
   },
 ];
 
@@ -303,18 +303,18 @@ function confirmationText(dialog) {
   }
   if (operation.mode === "bulk") {
     if (operation.bulk === "DELETE") {
-      return `Remove "${action.name}" from all rules of "${name}".`;
+      return `Удалить «${action.name}» со всех правил «${name}».`;
     }
-    return `Add "${action.name}" to all rules of "${name}".`;
+    return `Добавить «${action.name}» на все правила «${name}».`;
   }
   const source = selectedAction(dialog, "from");
   if (!source) {
     return "";
   }
   if (source.id === action.id) {
-    return "Choose two different actions.";
+    return "Выберите два разных действия.";
   }
-  return `Replace "${source.name}" with "${action.name}" on all rules of "${name}".`;
+  return `На всех правилах «${name}» действие «${source.name}» будет заменено на «${action.name}».`;
 }
 
 function setStatus(dialog, message, tone) {
@@ -340,7 +340,7 @@ function updateConfirmation(dialog) {
   const same = !source || !action || source.id === action.id;
   submit.disabled = same;
   if (source && action) {
-    setStatus(dialog, same ? "Choose two different actions." : "", same ? "error" : "info");
+    setStatus(dialog, same ? "Выберите два разных действия." : "", same ? "error" : "info");
   }
 }
 
@@ -422,7 +422,7 @@ function showToast(message) {
   }
   const host = document.createElement("div");
   host.id = TOAST_ID;
-  host.style.cssText = "all:initial;position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:360px;";
+  host.style.cssText = "all:initial;display:block;position:fixed;right:16px;bottom:16px;z-index:2147483647;max-width:360px;";
   const shadow = attachUi(host);
   const toast = document.createElement("div");
   toast.className = "ptaf-bulk-toast";
@@ -453,16 +453,19 @@ function fillActionList(list, actions) {
     row.setAttribute("aria-selected", "false");
     row.dataset.id = action.id;
     row.dataset.name = action.name;
+    const top = document.createElement("span");
+    top.className = "ptaf-bulk-row-top";
     const name = document.createElement("span");
     name.className = "ptaf-bulk-row-name";
     name.textContent = action.name;
+    top.append(name);
     if (action.is_system) {
       const mark = document.createElement("span");
       mark.className = "ptaf-bulk-row-mark";
-      mark.textContent = "system";
-      name.append(mark);
+      mark.textContent = "системное";
+      top.append(mark);
     }
-    row.append(name);
+    row.append(top);
     const description = actionDescription(action, actionCatalog.typeById, actionCatalog.captions);
     if (description) {
       const caption = document.createElement("span");
@@ -484,7 +487,8 @@ function renderActionList(dialog) {
   const replacing = operation.mode === "replace";
   dialog.querySelector(".ptaf-bulk-dialog").classList.toggle("is-replace", replacing);
   fromField.hidden = !replacing;
-  dialog.querySelector(".ptaf-bulk-from-label").textContent = operation.fromLabel || "Replace";
+  dialog.querySelector(".ptaf-bulk-arrow").hidden = !replacing;
+  dialog.querySelector(".ptaf-bulk-from-label").textContent = operation.fromLabel || "Что меняем";
   dialog.querySelector(".ptaf-bulk-to-label").textContent = replacing ? operation.toLabel : operation.listLabel;
   fromList.replaceChildren();
   toList.replaceChildren();
@@ -526,7 +530,7 @@ function renderActionList(dialog) {
   const chosenTo = selectedAction(dialog, "to");
   const sameChoice = Boolean(chosenFrom && chosenTo && chosenFrom.id === chosenTo.id);
   submit.disabled = sameChoice;
-  setStatus(dialog, sameChoice ? "Choose two different actions." : "", sameChoice ? "error" : "info");
+  setStatus(dialog, sameChoice ? "Выберите два разных действия." : "", sameChoice ? "error" : "info");
 }
 
 async function loadActions(dialog) {
@@ -673,31 +677,32 @@ function openDialog(target) {
   returnFocus = focusTarget;
   const host = document.createElement("div");
   host.id = DIALOG_ID;
-  host.style.cssText = "all:initial;position:fixed;inset:0;z-index:2147483646;";
+  host.style.cssText = "all:initial;display:block;position:fixed;inset:0;z-index:2147483646;";
   const shadow = attachUi(host);
   const backdrop = document.createElement("div");
   backdrop.className = "ptaf-bulk-backdrop";
   backdrop.innerHTML = `
     <div class="ptaf-bulk-dialog" role="dialog" aria-modal="true" aria-labelledby="ptaf-bulk-title" tabindex="-1">
-      <h2 id="ptaf-bulk-title">Apply action to all rules</h2>
+      <h2 id="ptaf-bulk-title">Действия для всех правил</h2>
       <p class="ptaf-bulk-entity"></p>
       <div class="ptaf-bulk-field">
-        <label for="ptaf-bulk-menu">Operation</label>
+        <label for="ptaf-bulk-menu">Операция</label>
         <select id="ptaf-bulk-menu" class="ptaf-bulk-menu"></select>
       </div>
       <div class="ptaf-bulk-field ptaf-bulk-from" hidden>
-        <span class="ptaf-bulk-from-label">Replace</span>
-        <div class="ptaf-bulk-list" data-role="from" role="listbox" aria-label="Action to replace"></div>
+        <span class="ptaf-bulk-from-label">Что меняем</span>
+        <div class="ptaf-bulk-list" data-role="from" role="listbox" aria-label="Что меняем"></div>
       </div>
+      <div class="ptaf-bulk-arrow" hidden aria-hidden="true"><span>↓</span></div>
       <div class="ptaf-bulk-field">
-        <span class="ptaf-bulk-to-label">Send to syslog</span>
-        <div class="ptaf-bulk-list" data-role="to" role="listbox" aria-label="Action"></div>
+        <span class="ptaf-bulk-to-label">Действие</span>
+        <div class="ptaf-bulk-list" data-role="to" role="listbox" aria-label="На что меняем"></div>
       </div>
       <p class="ptaf-bulk-confirm"></p>
       <p class="ptaf-bulk-status" hidden></p>
       <div class="ptaf-bulk-actions">
-        <button type="button" class="ptaf-bulk-cancel">Cancel</button>
-        <button type="button" class="ptaf-bulk-submit">Apply</button>
+        <button type="button" class="ptaf-bulk-cancel">Отмена</button>
+        <button type="button" class="ptaf-bulk-submit">Применить</button>
       </div>
     </div>
   `;
@@ -710,7 +715,7 @@ function openDialog(target) {
     option.textContent = operation.label;
     menu.append(option);
   }
-  shadow.querySelector(".ptaf-bulk-entity").textContent = `Target: ${entityName()}`;
+  shadow.querySelector(".ptaf-bulk-entity").textContent = entityName();
   backdrop.addEventListener("click", (event) => {
     if (event.target === backdrop) {
       closeDialog();
@@ -746,7 +751,7 @@ function createButton() {
   const button = document.createElement("button");
   button.type = "button";
   button.className = "ptaf-bulk-trigger";
-  button.textContent = "Apply action to all rules";
+  button.textContent = "Действия для всех правил";
   button.addEventListener("click", (event) => {
     event.preventDefault();
     event.stopPropagation();
