@@ -1329,7 +1329,7 @@ function placeWriteButton(root) {
     }
     return;
   }
-  const targets = root.querySelectorAll(".ptaf-compare-exclusion[data-match='target'], .ptaf-compare-param-side.is-target");
+  const targets = root.querySelectorAll(".ptaf-compare-exclusion[data-match='target']");
   const target = targets[targets.length - 1];
   if (!target) {
     return;
@@ -1525,6 +1525,10 @@ function renderOtherParams(part) {
       block.append(name);
     }
     block.append(columns);
+    const footer = renderParamPendingFooter(field);
+    if (footer) {
+      block.append(footer);
+    }
     wrap.append(block);
   }
   return wrap;
@@ -1588,6 +1592,23 @@ function renderPendingParamBody(field) {
   return renderParamValue(next, current, outcome.nextPresent, field);
 }
 
+function renderParamPendingFooter(field) {
+  const chosen = pendingParam(field);
+  if (!chosen) {
+    return null;
+  }
+  const footer = document.createElement("div");
+  footer.className = "ptaf-compare-param-pending";
+  const note = document.createElement("p");
+  note.className = "ptaf-compare-target-note";
+  note.textContent = `После «Записать» в ${pendingDestination(chosen.direction)} значение станет таким. Остальное не изменится.`;
+  const actions = document.createElement("div");
+  actions.className = "ptaf-compare-param-pending-actions";
+  actions.append(removePendingButton(pendingKey(chosen)), createWriteButton());
+  footer.append(note, actions);
+  return footer;
+}
+
 function renderOtherParamSide(field, side) {
   const cell = document.createElement("div");
   cell.className = "ptaf-compare-param-side";
@@ -1617,13 +1638,6 @@ function renderOtherParamSide(field, side) {
       direction: side.write,
       fields: [field],
     }), side.buttonLabel));
-  }
-  if (targeted) {
-    const chosen = pendingParam(field);
-    const note = document.createElement("p");
-    note.className = "ptaf-compare-target-note";
-    note.textContent = `После «Записать» в ${pendingDestination(chosen.direction)} значение станет таким. Остальное не изменится.`;
-    cell.append(note, removePendingButton(pendingKey(chosen)));
   }
   return cell;
 }

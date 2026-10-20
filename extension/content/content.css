@@ -1070,10 +1070,42 @@
   border-color: var(--ptaf-error);
 }
 
+.ptaf-compare-param-side {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+}
+
+.ptaf-compare-param-side > .ptaf-compare-arrow {
+  align-self: flex-start;
+}
+
 .ptaf-compare-param-side.is-target {
+  padding: 10px 12px;
   border-radius: 8px;
   background: var(--ptaf-selected);
   box-shadow: inset 0 0 0 1px var(--ptaf-accent);
+}
+
+.ptaf-compare-param-pending {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ptaf-compare-param-pending-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ptaf-compare-param-pending .ptaf-compare-target-note,
+.ptaf-compare-param-pending .ptaf-compare-remove {
+  margin: 0;
 }
 
 .ptaf-compare-target-note {
