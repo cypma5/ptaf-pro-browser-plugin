@@ -31,6 +31,7 @@ let certLoading = null;
 let certFrame = 0;
 let certObserver = null;
 let certStopped = false;
+const certBoundInputs = new Set();
 
 function certContextAlive() {
   try {
@@ -59,6 +60,11 @@ function stopCertificates() {
     delete node.dataset.ptafCertExpiry;
   });
   document.querySelectorAll(".ptaf-cert-attrs, #ptaf-cert-attrs-style").forEach((node) => node.remove());
+  certBoundInputs.forEach((textarea) => {
+    textarea.removeEventListener("input", scheduleCertificates);
+    delete textarea.dataset.ptafCertBound;
+  });
+  certBoundInputs.clear();
 }
 
 function certToken() {
@@ -529,6 +535,7 @@ function paintChainFields() {
     if (!textarea.dataset.ptafCertBound) {
       textarea.dataset.ptafCertBound = "1";
       textarea.addEventListener("input", scheduleCertificates);
+      certBoundInputs.add(textarea);
     }
     const host = textarea.closest("ptaf-ddf-core-field") || textarea.closest("ptaf-key-upload-wrapper");
     if (host) {
