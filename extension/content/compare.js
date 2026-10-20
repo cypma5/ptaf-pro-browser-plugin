@@ -129,6 +129,26 @@ const PARAM_LABELS = {
   websocket_upstream: "Данные WebSocket клиента",
 };
 
+const CHECK_PART_LABELS = {
+  REQUEST_GET: "GET-параметры",
+  REQUEST_POST: "POST-параметры",
+  REQUEST_HEADERS: "Заголовки",
+  REQUEST_COOKIES: "Cookie",
+  REQUEST_PATH: "Путь",
+  REQUEST_URI: "URI",
+  REQUEST_BODY: "Тело запроса",
+  REQUEST_JSON: "JSON",
+  REQUEST_XML: "XML",
+  REQUEST_FILES: "Файлы",
+  WEBSOCKET_UPSTREAM: "Данные WebSocket от сервера",
+  WEBSOCKET_DOWNSTREAM: "Данные WebSocket от клиента",
+};
+
+const SCHEMA_TITLE_LABELS = {
+  list_of_flags_as_dbms_dialect_types_parameters: "Типы диалектов СУБД",
+  list_of_flags_as_quote_types_parameters: "Типы кавычек",
+};
+
 const OPERATOR_LABELS = {
   eq: "равно",
   equal: "равно",
@@ -629,6 +649,18 @@ function labelOf(map, value) {
   return map[token] || map[token.replace(/_/g, " ")] || "";
 }
 
+function localizedParamTitle(path, schemaTitle) {
+  const translatedSchema = schemaTitle ? labelOf(SCHEMA_TITLE_LABELS, schemaTitle) : "";
+  if (translatedSchema) {
+    return translatedSchema;
+  }
+  const leaf = String(path || "").split(".").pop();
+  if (!schemaTitle || schemaTitle === path) {
+    return CHECK_PART_LABELS[leaf] || path;
+  }
+  return schemaTitle;
+}
+
 function conditionText(condition) {
   if (!condition || typeof condition !== "object") {
     return String(condition);
@@ -996,7 +1028,7 @@ function buildRuleParts(policyDetails, templateDetails, actionNames) {
   const buckets = { skip: [], check: [], other: [] };
   const paths = Object.keys(policyLeaves).concat(Object.keys(templateLeaves));
   for (const path of Array.from(new Set(paths)).sort()) {
-    let title = titles[path] || path;
+    let title = localizedParamTitle(path, titles[path]);
     if (path === "settings" || path.endsWith(".settings")) {
       title = "Параметры правила";
     }
@@ -2046,6 +2078,19 @@ function pendingList() {
   return Array.isArray(compareState.pending) ? compareState.pending : [];
 }
 
+function queuedDirection() {
+  const entry = pendingList().find((item) => item.kind !== "restore" && item.direction);
+  return entry ? entry.direction : "";
+}
+
+function acceptDirectionChange(direction) {
+  const current = queuedDirection();
+  if (!current || current === direction) {
+    return true;
+  }
+  return window.confirm("Предыдущие настройки сбросятся. Сменить направление переноса?");
+}
+
 function pendingKey(entry) {
   if (!entry) {
     return "";
@@ -2069,6 +2114,19 @@ function pendingParam(field) {
     entry.kind === "copy-params"
     && (entry.fields || []).some((item) => item.path === field.path && item.scope === field.scope)
   )) || null;
+}
+
+function queuedDirection() {
+  const entry = pendingList().find((item) => item.kind !== "restore" && item.direction);
+  return entry ? entry.direction : "";
+}
+
+function acceptDirectionChange(direction) {
+  const current = queuedDirection();
+  if (!current || current === direction) {
+    return true;
+  }
+  return window.confirm("Предыдущие настройки сбросятся. Сменить направление переноса?");
 }
 
 function dropPending(key) {
@@ -2100,11 +2158,19 @@ function armCompare(entry) {
   }
   const key = pendingKey(entry);
   const list = pendingList().filter((item) => item.kind !== "restore");
+  const queued = queuedDirection();
+  if (queued && queued !== entry.direction) {
+    if (!acceptDirectionChange(entry.direction)) {
+      return;
+    }
+    compareState.pending = [entry];
+    compareState.error = "";
+    renderCompareDialog();
+    return;
+  }
   const current = list.find((item) => pendingKey(item) === key);
   if (current && current.direction === entry.direction) {
     compareState.pending = list.filter((item) => pendingKey(item) !== key);
-  } else if (current) {
-    compareState.pending = list.map((item) => (pendingKey(item) === key ? entry : item));
   } else {
     compareState.pending = list.concat(entry);
   }
@@ -2121,6 +2187,16 @@ function armCopyAll(entry) {
   }));
   const keys = new Set(copies.map(pendingKey));
   const list = pendingList().filter((item) => item.kind !== "restore");
+  const queued = queuedDirection();
+  if (queued && entry.direction && queued !== entry.direction) {
+    if (!copies.length || !acceptDirectionChange(entry.direction)) {
+      return;
+    }
+    compareState.pending = copies;
+    compareState.error = "";
+    renderCompareDialog();
+    return;
+  }
   const allSelected = copies.length > 0 && copies.every((copy) => (
     list.some((item) => pendingKey(item) === pendingKey(copy) && item.direction === copy.direction)
   ));
