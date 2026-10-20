@@ -461,7 +461,7 @@ function tenantMenuItem(source) {
   item.removeAttribute("ng-reflect-router-link");
   item.removeAttribute("disabled");
   item.id = TRAFFIC_BUTTON_ID;
-  replaceItemLabel(item, "Параметры тенанта");
+  replaceItemLabel(item, "traffic_settings");
   item.addEventListener("click", onTenantMenuClick);
   return item;
 }
@@ -473,6 +473,12 @@ function syncTrafficButton() {
   }
   syncTrafficTheme();
   const floating = document.getElementById(TRAFFIC_BUTTON_ID);
+  if (!trafficExperimental) {
+    if (floating) {
+      floating.remove();
+    }
+    return;
+  }
   if (floating && !floating.closest(".kbq-dropdown__content")) {
     floating.remove();
   }
@@ -727,7 +733,7 @@ async function saveTraffic(dialog) {
 }
 
 function openTrafficDialog() {
-  if (trafficSaving || trafficStopped) {
+  if (trafficSaving || trafficStopped || !trafficExperimental) {
     return;
   }
   closeTrafficDialog();
@@ -742,7 +748,8 @@ function openTrafficDialog() {
   backdrop.className = "ptaf-traffic-backdrop";
   backdrop.innerHTML = `
     <div class="ptaf-traffic-dialog" role="dialog" aria-modal="true" aria-labelledby="ptaf-traffic-title" tabindex="-1">
-      <h2 id="ptaf-traffic-title">Параметры тенанта</h2>
+      <h2 id="ptaf-traffic-title">traffic_settings</h2>
+      <p class="ptaf-traffic-warning">Экспериментальная функция. Включается галкой «Экспериментальные функции» в настройках расширения.</p>
       <p class="ptaf-traffic-warning">Это дополнительный модуль (addon). Компания Positive Technologies его не поддерживает. Используйте на свой страх и риск.</p>
       <p class="ptaf-traffic-warning">Изменение параметров влияет на все веб-приложения изолированного пространства и может нарушить работу PT AF.</p>
       <input class="ptaf-traffic-search" type="search" placeholder="Поиск параметра" aria-label="Поиск параметра">
@@ -809,4 +816,39 @@ function watchTraffic() {
 document.addEventListener("keydown", onTrafficKey);
 watchTraffic();
 watchTrafficTheme();
-scheduleTraffic();
+
+let trafficExperimental = false;
+
+function applyTrafficExperimental(enabled) {
+  trafficExperimental = Boolean(enabled);
+  if (!trafficExperimental) {
+    const item = document.getElementById(TRAFFIC_BUTTON_ID);
+    if (item) {
+      item.remove();
+    }
+    if (!trafficSaving) {
+      closeTrafficDialog();
+    }
+    return;
+  }
+  scheduleTraffic();
+}
+
+function readTrafficExperimental() {
+  if (!chrome.storage || !chrome.storage.local) {
+    applyTrafficExperimental(false);
+    return;
+  }
+  chrome.storage.local.get({ experimental: false }, (items) => {
+    applyTrafficExperimental(items && items.experimental);
+  });
+}
+
+if (chrome.storage && chrome.storage.onChanged) {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === "local" && changes.experimental) {
+      applyTrafficExperimental(changes.experimental.newValue);
+    }
+  });
+}
+readTrafficExperimental();
