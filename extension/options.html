@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <title>PT AF PRO Browser Extension</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: Inter, Segoe UI, sans-serif;
+        font-size: 14px;
+        line-height: 20px;
+      }
+      body {
+        margin: 0;
+        padding: 24px;
+        min-width: 320px;
+      }
+      h1 {
+        margin: 0 0 16px;
+        font-size: 16px;
+        line-height: 24px;
+      }
+      label {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        cursor: pointer;
+      }
+      input {
+        margin: 3px 0 0;
+      }
+      p {
+        margin: 8px 0 0 24px;
+        color: gray;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>PT AF PRO Browser Extension</h1>
+    <label>
+      <input id="experimental" type="checkbox">
+      <span>Экспериментальные функции</span>
+    </label>
+    <p>Включает сравнение политики и шаблона на странице правила. Пока галка снята, эта кнопка на странице не показывается.</p>
+    <script src="options.js"></script>
+  </body>
+</html>
