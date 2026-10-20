@@ -858,11 +858,8 @@ function confirmationText(dialog) {
     if (kind === "log") {
       return `Добавить «${action.name}» на ${selected} отмеченных правилах «${name}», где Log to DB ещё нет.`;
     }
-    if (kind === "response") {
-      return `Добавить «${action.name}» на ${selected} отмеченных правилах «${name}», где Custom response ещё нет. Если на правиле был Send TCP RST, он будет снят.`;
-    }
-    if (kind === "rst") {
-      return `Добавить «${action.name}» на ${selected} правил «${name}». Прежние Send TCP RST и Custom response будут сняты.`;
+    if (kind === "response" || kind === "rst") {
+      return `Добавить «${action.name}» на ${selected} отмеченных правилах «${name}», где ещё нет Custom response и Send TCP RST.`;
     }
     return `Добавить «${action.name}» на ${selected} отмеченных правилах «${name}». Правила без Log to DB будут пропущены.`;
   }
@@ -1410,8 +1407,8 @@ function ruleMatchesSelectedAction(rule, dialog) {
   if (kind === "log") {
     return !ruleHasKind(rule, "log");
   }
-  if (kind === "response") {
-    return !ruleHasKind(rule, "response");
+  if (kind === "response" || kind === "rst") {
+    return !ruleHasKind(rule, "response") && !ruleHasKind(rule, "rst");
   }
   return true;
 }
@@ -1466,8 +1463,8 @@ function renderRuleRows(dialog) {
       empty.textContent = "Нет правил с этим действием.";
     } else if (operation.mode === "filter" && filterMode(dialog) === "ADD" && actionKind(selectedAction(dialog, "to")) === "log" && !rulePicker.rules.some((rule) => classValue(rule.eventClass) !== "info" && !ruleHasKind(rule, "log"))) {
       empty.textContent = "Нет правил без Log to DB.";
-    } else if (operation.mode === "filter" && filterMode(dialog) === "ADD" && actionKind(selectedAction(dialog, "to")) === "response" && !rulePicker.rules.some((rule) => classValue(rule.eventClass) !== "info" && !ruleHasKind(rule, "response"))) {
-      empty.textContent = "Нет правил без Custom response.";
+    } else if (operation.mode === "filter" && filterMode(dialog) === "ADD" && (actionKind(selectedAction(dialog, "to")) === "response" || actionKind(selectedAction(dialog, "to")) === "rst") && !rulePicker.rules.some((rule) => classValue(rule.eventClass) !== "info" && !ruleHasKind(rule, "response") && !ruleHasKind(rule, "rst"))) {
+      empty.textContent = "Нет правил без Custom response и Send TCP RST.";
     } else {
       empty.textContent = "Нет правил по этому фильтру.";
     }
@@ -1702,7 +1699,7 @@ async function applyFiltered(dialog, action, mode) {
         unchanged += 1;
         continue;
       }
-      if (mode === "ADD" && actionKind(action) === "response" && ruleHasKind(rule, "response")) {
+      if (mode === "ADD" && (actionKind(action) === "response" || actionKind(action) === "rst") && (ruleHasKind(rule, "response") || ruleHasKind(rule, "rst"))) {
         unchanged += 1;
         continue;
       }

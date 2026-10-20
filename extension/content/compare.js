@@ -11,6 +11,7 @@ const compareState = {
   writing: false,
   pending: [],
   policies: [],
+  linkedPolicies: [],
   policyId: "",
   templateId: "",
   policyName: "",
@@ -1244,7 +1245,7 @@ function renderCompareDialog() {
   const warning = document.createElement("p");
   warning.className = "ptaf-compare-warning";
   warning.textContent = "Экспериментальная функция. Сравниваются состояние, действия, пропускаемые и проверяемые части и остальные параметры. Копирование исключения добавляет его и не меняет действия. Отличающиеся параметры можно перенести в шаблон.";
-  root.append(warning);
+  root.append(warning, renderCompareLegend());
 
   if (compareState.policies.length > 1) {
     const field = document.createElement("label");
@@ -1324,11 +1325,64 @@ function renderCompareDialog() {
 
   const confirm = renderPendingConfirm();
   root.append(confirm);
+  if (compareState.templateId && compareState.note !== "Чтение правил...") {
+    root.append(renderLinkedPolicies());
+  }
   placeWriteButton(root);
   const close = host.shadowRoot.querySelector(".ptaf-compare-close");
   if (close) {
     close.disabled = compareState.writing;
   }
+}
+
+function renderPolicyItems(policies, emptyText, markCurrent) {
+  const list = document.createElement("ul");
+  list.className = "ptaf-compare-policy-list";
+  if (!policies.length) {
+    const item = document.createElement("li");
+    item.textContent = emptyText;
+    list.append(item);
+    return list;
+  }
+  for (const policy of policies) {
+    const item = document.createElement("li");
+    item.textContent = policy.name || policy.id;
+    if (markCurrent && policy.id === compareState.policyId) {
+      item.textContent += " — эта политика";
+    }
+    list.append(item);
+  }
+  return list;
+}
+
+function renderLinkedPolicies() {
+  const box = document.createElement("section");
+  box.className = "ptaf-compare-linked";
+  const title = document.createElement("h3");
+  title.textContent = `Политики безопасности на основе шаблона «${compareState.templateName || compareState.templateId}»`;
+  const note = document.createElement("p");
+  note.className = "ptaf-compare-note";
+  note.textContent = "Изменение шаблона повлияет на эти политики.";
+  box.append(title, note, renderPolicyItems(compareState.linkedPolicies || [], "Нет политик приложений на основе этого шаблона.", true));
+  return box;
+}
+
+function renderCompareLegend() {
+  const legend = document.createElement("ul");
+  legend.className = "ptaf-compare-legend";
+  const items = [
+    ["accent", "Синяя рамка — сюда перенесётся"],
+    ["warning", "Жёлтая рамка — отличие"],
+    ["success", "Зелёная рамка — уже совпадает или будет добавлено"],
+    ["error", "Красная рамка — будет удалено"],
+  ];
+  for (const [tone, text] of items) {
+    const item = document.createElement("li");
+    item.dataset.tone = tone;
+    item.textContent = text;
+    legend.append(item);
+  }
+  return legend;
 }
 
 function createWriteButton() {
@@ -2274,6 +2328,7 @@ async function loadCompare(host) {
   compareState.vendorIds = [];
   compareState.mode = "policy";
   compareState.overridden = false;
+  compareState.linkedPolicies = [];
   renderCompareDialog();
   try {
     const page = parseComparePage();
@@ -2298,35 +2353,27 @@ async function loadCompare(host) {
         return;
       }
       compareState.templateName = template && template.name ? template.name : compareState.templateId;
+      const linked = await policiesForTemplate(compareState.templateId, token, host);
+      if (linked === null) {
+        return;
+      }
+      compareState.linkedPolicies = linked;
       if (!(await loadRuleSets(template, token, host))) {
         return;
       }
     } else {
       compareState.templateId = page.entityId;
       const template = await api(`/config/policies/templates/user/${page.entityId}`);
-      const policiesBody = await api("/config/policies");
-      if (token !== compareState.token || !host.isConnected) {
+      const linked = await policiesForTemplate(page.entityId, token, host);
+      if (linked === null) {
         return;
       }
-      let policies = itemsOf(policiesBody);
-      if (policies.length && policies[0].template_id === undefined) {
-        const detailed = [];
-        for (const item of policies) {
-          if (!item || !item.id) {
-            continue;
-          }
-          detailed.push(await api(`/config/policies/${item.id}`));
-          if (token !== compareState.token || !host.isConnected) {
-            return;
-          }
-        }
-        policies = detailed;
-      }
       compareState.templateName = template && template.name ? template.name : page.entityId;
+      compareState.linkedPolicies = linked;
       if (!(await loadRuleSets(template, token, host))) {
         return;
       }
-      compareState.policies = policies.filter((item) => item && linkedTemplateId(item) === page.entityId);
+      compareState.policies = linked;
       if (!compareState.policies.length) {
         compareState.mode = "vendor";
         compareState.policyId = "";
@@ -2350,6 +2397,33 @@ async function loadCompare(host) {
     compareState.error = error.message || "Не удалось прочитать правила.";
     renderCompareDialog();
   }
+}
+
+async function policiesForTemplate(templateId, token, host) {
+  if (!templateId) {
+    return [];
+  }
+  const policiesBody = await api("/config/policies");
+  if (token !== compareState.token || !host.isConnected) {
+    return null;
+  }
+  let policies = itemsOf(policiesBody);
+  if (policies.length && !linkedTemplateId(policies[0])) {
+    const detailed = [];
+    for (const item of policies) {
+      if (!item || !item.id) {
+        continue;
+      }
+      detailed.push(await api(`/config/policies/${item.id}`));
+      if (token !== compareState.token || !host.isConnected) {
+        return null;
+      }
+    }
+    policies = detailed;
+  }
+  return policies
+    .filter((item) => item && linkedTemplateId(item) === templateId)
+    .sort((left, right) => String(left.name || left.id).localeCompare(String(right.name || right.id), "ru"));
 }
 
 function linkedTemplateId(policy) {
