@@ -9,7 +9,7 @@ const COMPARE_RULE_PATH = new RegExp(
 const compareState = {
   token: 0,
   writing: false,
-  pending: null,
+  pending: [],
   policies: [],
   policyId: "",
   templateId: "",
@@ -405,12 +405,34 @@ function setVariablePath(target, path, value) {
   cursor[keys[keys.length - 1]] = value;
 }
 
+function deleteVariablePath(target, path) {
+  const keys = path.split(".");
+  let cursor = target;
+  for (let index = 0; index < keys.length - 1; index += 1) {
+    const key = keys[index];
+    if (!cursor[key] || typeof cursor[key] !== "object" || Array.isArray(cursor[key])) {
+      return;
+    }
+    cursor = cursor[key];
+  }
+  if (cursor && Object.prototype.hasOwnProperty.call(cursor, keys[keys.length - 1])) {
+    delete cursor[keys[keys.length - 1]];
+  }
+}
+
 function writeParamsBody(baseVars, fields, valueOf, presentOf) {
   const next = compareClone(compareObject(baseVars));
   const body = {};
   let variablesChanged = false;
   for (const field of fields) {
-    if (!field || !field.path || !presentOf(field)) {
+    if (!field || !field.path) {
+      continue;
+    }
+    if (!presentOf(field)) {
+      if (field.scope === "variables") {
+        deleteVariablePath(next, field.path);
+        variablesChanged = true;
+      }
       continue;
     }
     const value = compareClone(valueOf(field));
@@ -468,6 +490,63 @@ function paramTransferTarget(direction) {
     valueOf: (field) => field.policyValue,
     present: (field) => field.policyPresent,
   };
+}
+
+function writesOntoPolicyState(direction) {
+  return compareState.mode === "vendor" || direction === "policy";
+}
+
+function writeQueuedDirection(direction, entries) {
+  const target = paramTransferTarget(direction);
+  if (!target || !target.path) {
+    throw new Error("Набор системных правил не изменяется.");
+  }
+  const fields = entries
+    .filter((entry) => entry.kind === "copy-params")
+    .flatMap((entry) => entry.fields || []);
+  const body = writeParamsBody(target.vars, fields, target.valueOf, target.present);
+  const vars = body.variables ? body.variables : compareClone(compareObject(target.vars));
+  const cache = new Map();
+  let variablesChanged = Boolean(body.variables);
+  const toPolicyState = writesOntoPolicyState(direction);
+  for (const bucket of ["skip", "exclusion"]) {
+    const additions = entries
+      .filter((entry) => (entry.kind === "copy" || entry.kind === "copy-all") && (entry.bucket || "exclusion") === bucket)
+      .flatMap((entry) => entry.items || []);
+    if (!additions.length) {
+      continue;
+    }
+    const place = targetExclusionPlace(toPolicyState, bucket);
+    const changed = applyPlaceAdditions(vars, body, place, additions, cache);
+    variablesChanged = variablesChanged || changed;
+  }
+  if (variablesChanged) {
+    body.variables = vars;
+  }
+  if (!Object.keys(body).length) {
+    throw new Error("Нечего записывать.");
+  }
+  return api(target.path, { method: "PATCH", body });
+}
+
+function applyPlaceAdditions(vars, body, place, additions, cache) {
+  const id = `${place.container}:${place.key || ""}:${place.nested || ""}`;
+  const base = cache.has(id) ? cache.get(id) : exclusionItems(place);
+  const items = appendExclusions(base, additions);
+  cache.set(id, items);
+  const stored = place.encoded ? JSON.stringify(items) : items;
+  if (place.container === "root") {
+    body.exclusions = stored;
+    return false;
+  }
+  if (place.nested) {
+    const parent = compareClone(compareObject(vars[place.key]));
+    parent[place.nested] = stored;
+    vars[place.key] = parent;
+  } else {
+    vars[place.key] = stored;
+  }
+  return true;
 }
 
 function writeExclusionBody(targetVars, place, additions) {
@@ -1104,7 +1183,7 @@ function closeCompareDialog() {
     host.remove();
   }
   compareState.token += 1;
-  compareState.pending = null;
+  compareState.pending = [];
 }
 
 function compareDialogTheme() {
@@ -1151,7 +1230,7 @@ function renderCompareDialog() {
     select.disabled = compareState.writing;
     select.addEventListener("change", () => {
       compareState.policyId = select.value;
-      compareState.pending = null;
+      compareState.pending = [];
       loadCompare(host);
     });
     field.append(select);
@@ -1224,29 +1303,34 @@ function createWriteButton() {
   const write = document.createElement("button");
   write.type = "button";
   write.className = "ptaf-compare-write";
+  const entries = pendingList();
+  const restoring = entries.some((entry) => entry.kind === "restore");
+  const count = entries.length;
   write.textContent = compareState.writing
     ? "Запись..."
-    : compareState.pending && compareState.pending.kind === "restore"
+    : restoring
       ? "Восстановить"
-      : "Записать";
-  write.disabled = compareState.writing || !compareState.pending;
+      : (count > 1 ? `Записать ${count}` : "Записать");
+  write.disabled = compareState.writing || !count;
   write.addEventListener("click", () => writeCompare());
   return write;
 }
 
 function placeWriteButton(root) {
-  if (!compareState.pending) {
+  const entries = pendingList();
+  if (!entries.length) {
     return;
   }
   const write = createWriteButton();
-  if (compareState.pending.kind === "restore") {
+  if (entries.some((entry) => entry.kind === "restore")) {
     const banner = root.querySelector(".ptaf-compare-restore");
     if (banner) {
       banner.append(write);
     }
     return;
   }
-  const target = root.querySelector(".ptaf-compare-exclusion[data-match='target'], .ptaf-compare-param-side.is-target");
+  const targets = root.querySelectorAll(".ptaf-compare-exclusion[data-match='target'], .ptaf-compare-param-side.is-target");
+  const target = targets[targets.length - 1];
   if (!target) {
     return;
   }
@@ -1326,12 +1410,9 @@ function canCopyParam(field, direction) {
     return false;
   }
   if (compareState.mode === "vendor") {
-    return direction === "template" && field.templatePresent;
+    return direction === "template";
   }
-  if (direction === "policy") {
-    return field.templatePresent;
-  }
-  return field.policyPresent;
+  return direction === "policy" || direction === "template";
 }
 
 function isFlagList(value) {
@@ -1484,12 +1565,8 @@ function renderFlagOutcome(current, next) {
 }
 
 function sideIsTransferTarget(field, side) {
-  const pending = compareState.pending;
-  if (!pending || pending.kind !== "copy-params") {
-    return false;
-  }
-  const selected = (pending.fields || []).some((item) => item.path === field.path && item.scope === field.scope);
-  if (!selected) {
+  const pending = pendingParam(field);
+  if (!pending) {
     return false;
   }
   if (compareState.mode === "vendor" || pending.direction === "policy") {
@@ -1499,7 +1576,8 @@ function sideIsTransferTarget(field, side) {
 }
 
 function renderPendingParamBody(field) {
-  const outcome = transferOutcome(field, compareState.pending.direction);
+  const pending = pendingParam(field);
+  const outcome = transferOutcome(field, pending ? pending.direction : "policy");
   const current = field.scope === "actions" ? (outcome.currentNames || []) : outcome.current;
   const next = field.scope === "actions" ? (outcome.nextNames || []) : outcome.next;
   if (field.scope === "actions" || isFlagList(current) || isFlagList(next)) {
@@ -1522,10 +1600,7 @@ function renderOtherParamSide(field, side) {
   label.textContent = side.caption;
   cell.append(label);
   if (targeted) {
-    const note = document.createElement("p");
-    note.className = "ptaf-compare-target-note";
-    note.textContent = `После «Записать» в ${pendingDestination(compareState.pending.direction)} значение станет таким. Остальное не изменится.`;
-    cell.append(note, renderPendingParamBody(field));
+    cell.append(renderPendingParamBody(field));
   } else {
     const present = side.source === "template" ? field.templatePresent : field.policyPresent;
     let value = side.source === "template" ? field.templateValue : field.policyValue;
@@ -1542,6 +1617,13 @@ function renderOtherParamSide(field, side) {
       direction: side.write,
       fields: [field],
     }), side.buttonLabel));
+  }
+  if (targeted) {
+    const chosen = pendingParam(field);
+    const note = document.createElement("p");
+    note.className = "ptaf-compare-target-note";
+    note.textContent = `После «Записать» в ${pendingDestination(chosen.direction)} значение станет таким. Остальное не изменится.`;
+    cell.append(note, removePendingButton(pendingKey(chosen)));
   }
   return cell;
 }
@@ -1647,8 +1729,8 @@ function renderExclusionBoard(list) {
     const sendLeft = pair.left && !pair.same && pendingCopyMatches(pair.left.item, left.direction, left.bucket);
     const sendRight = pair.right && !pair.same && pendingCopyMatches(pair.right.item, right.direction, right.bucket);
     board.append(
-      pair.left ? renderExclusionCard(pair.left.item, pair.left.index, left.direction, pair.same, left.readOnly, left.bucket) : (sendRight ? renderTransferTarget(pair.right.item) : renderExclusionGap()),
-      pair.right ? renderExclusionCard(pair.right.item, pair.right.index, right.direction, pair.same, right.readOnly, right.bucket) : (sendLeft ? renderTransferTarget(pair.left.item) : renderExclusionGap())
+      pair.left ? renderExclusionCard(pair.left.item, pair.left.index, left.direction, pair.same, left.readOnly, left.bucket) : (sendRight ? renderTransferTarget(pair.right.item, right.direction, right.bucket) : renderExclusionGap()),
+      pair.right ? renderExclusionCard(pair.right.item, pair.right.index, right.direction, pair.same, right.readOnly, right.bucket) : (sendLeft ? renderTransferTarget(pair.left.item, left.direction, left.bucket) : renderExclusionGap())
     );
   }
   return board;
@@ -1682,36 +1764,37 @@ function renderExclusionHead(options) {
     all.className = "ptaf-compare-all";
     all.textContent = options.allLabel || "Перенести все исключения";
     all.disabled = compareState.writing || !fresh.length;
-    all.addEventListener("click", () => armCompare({ kind: "copy-all", direction: "template", bucket: options.bucket || "exclusion", items: options.items.slice() }));
+    all.addEventListener("click", () => armCompare({ kind: "copy-all", direction: "template", bucket: options.bucket || "exclusion", items: fresh.slice() }));
     side.append(all);
   }
   return side;
 }
 
 function pendingCopyMatches(item, direction, bucket) {
-  const pending = compareState.pending;
-  if (!pending || (pending.kind !== "copy" && pending.kind !== "copy-all")) {
-    return false;
-  }
-  if (pending.direction !== direction || (pending.bucket || "exclusion") !== (bucket || "exclusion")) {
-    return false;
-  }
-  if (pending.kind === "copy-all") {
-    return true;
-  }
-  return (pending.items || []).some((candidate) => exclusionSignature(candidate) === exclusionSignature(item));
+  const bucketName = bucket || "exclusion";
+  const signature = exclusionSignature(item);
+  return pendingList().some((entry) => {
+    if ((entry.kind !== "copy" && entry.kind !== "copy-all") || entry.direction !== direction) {
+      return false;
+    }
+    if ((entry.bucket || "exclusion") !== bucketName) {
+      return false;
+    }
+    if (entry.kind === "copy-all") {
+      return true;
+    }
+    return (entry.items || []).some((candidate) => exclusionSignature(candidate) === signature);
+  });
 }
 
-function renderTransferTarget(item) {
-  const card = renderExclusionCard(item, 0, "policy", false, true, "exclusion");
+function renderTransferTarget(item, direction, bucket) {
+  const card = renderExclusionCard(item, 0, direction, false, true, bucket || "exclusion");
   card.dataset.match = "target";
   const note = document.createElement("p");
   note.className = "ptaf-compare-target-note";
-  const pending = compareState.pending;
-  note.textContent = pending
-    ? `После «Записать» в ${pendingDestination(pending.direction)} будет добавлено. Уже существующие записи сохранятся.`
-    : "Перенесётся сюда";
-  card.append(note);
+  note.textContent = `После «Записать» в ${pendingDestination(direction)} будет добавлено. Уже существующие записи сохранятся.`;
+  const key = pendingKey({ kind: "copy", bucket: bucket || "exclusion", items: [item] });
+  card.append(note, removePendingButton(key));
   return card;
 }
 
@@ -1901,21 +1984,17 @@ function renderAddedPreview(item) {
 function renderPendingConfirm() {
   const box = document.createElement("div");
   box.className = "ptaf-compare-confirm";
-  const pending = compareState.pending;
+  const pending = pendingList().find((entry) => entry.kind === "restore");
   if (!pending) {
     return box;
   }
   const intro = document.createElement("p");
-  if (pending.kind === "copy-params" || pending.kind === "copy" || pending.kind === "copy-all") {
-    return box;
-  }
-  intro.textContent = comparePendingText();
+  intro.textContent = comparePendingText(pending);
   box.append(intro);
   return box;
 }
 
-function comparePendingText() {
-  const pending = compareState.pending;
+function comparePendingText(pending) {
   if (!pending) {
     return "";
   }
@@ -1949,8 +2028,91 @@ function comparePendingText() {
   return `${scope} будут добавлены в ${target}. ${kept}`;
 }
 
-function armCompare(pending) {
-  compareState.pending = pending;
+function pendingList() {
+  return Array.isArray(compareState.pending) ? compareState.pending : [];
+}
+
+function pendingKey(entry) {
+  if (!entry) {
+    return "";
+  }
+  if (entry.kind === "restore") {
+    return "restore";
+  }
+  if (entry.kind === "copy-params") {
+    const field = (entry.fields || [])[0] || {};
+    return `params:${field.scope || ""}:${field.path || ""}`;
+  }
+  if (entry.kind === "copy-all") {
+    return `all:${entry.bucket || "exclusion"}:${entry.direction || ""}`;
+  }
+  const item = (entry.items || [])[0];
+  return `copy:${entry.bucket || "exclusion"}:${item ? exclusionSignature(item) : ""}`;
+}
+
+function pendingParam(field) {
+  return pendingList().find((entry) => (
+    entry.kind === "copy-params"
+    && (entry.fields || []).some((item) => item.path === field.path && item.scope === field.scope)
+  )) || null;
+}
+
+function dropPending(key) {
+  compareState.pending = pendingList().filter((entry) => pendingKey(entry) !== key);
+  compareState.error = "";
+  renderCompareDialog();
+}
+
+function removePendingButton(key) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ptaf-compare-remove";
+  button.textContent = "Убрать";
+  button.disabled = compareState.writing;
+  button.addEventListener("click", () => dropPending(key));
+  return button;
+}
+
+function armCompare(entry) {
+  if (entry.kind === "restore") {
+    compareState.pending = [entry];
+    compareState.error = "";
+    renderCompareDialog();
+    return;
+  }
+  if (entry.kind === "copy-all") {
+    armCopyAll(entry);
+    return;
+  }
+  const key = pendingKey(entry);
+  const list = pendingList().filter((item) => item.kind !== "restore");
+  const current = list.find((item) => pendingKey(item) === key);
+  if (current && current.direction === entry.direction) {
+    compareState.pending = list.filter((item) => pendingKey(item) !== key);
+  } else if (current) {
+    compareState.pending = list.map((item) => (pendingKey(item) === key ? entry : item));
+  } else {
+    compareState.pending = list.concat(entry);
+  }
+  compareState.error = "";
+  renderCompareDialog();
+}
+
+function armCopyAll(entry) {
+  const copies = (entry.items || []).map((item) => ({
+    kind: "copy",
+    direction: entry.direction,
+    bucket: entry.bucket,
+    items: [item],
+  }));
+  const keys = new Set(copies.map(pendingKey));
+  const list = pendingList().filter((item) => item.kind !== "restore");
+  const allSelected = copies.length > 0 && copies.every((copy) => (
+    list.some((item) => pendingKey(item) === pendingKey(copy) && item.direction === copy.direction)
+  ));
+  compareState.pending = allSelected
+    ? list.filter((item) => !keys.has(pendingKey(item)))
+    : list.filter((item) => !keys.has(pendingKey(item))).concat(copies);
   compareState.error = "";
   renderCompareDialog();
 }
@@ -2007,7 +2169,7 @@ async function loadCompare(host) {
   compareState.note = "Чтение правил...";
   compareState.error = "";
   compareState.rows = [];
-  compareState.pending = null;
+  compareState.pending = [];
   compareState.policyExclusions = [];
   compareState.templateExclusions = [];
   compareState.policySkip = [];
@@ -2334,53 +2496,44 @@ async function restoreInheritance() {
 }
 
 async function writeCompare() {
-  const pending = compareState.pending;
+  const entries = pendingList();
   const host = document.getElementById(COMPARE_DIALOG_ID);
-  if (!pending || compareState.writing || !host) {
+  if (!entries.length || compareState.writing || !host) {
     return;
   }
-  if (compareState.mode === "vendor" && pending.kind !== "restore" && pending.kind !== "copy-params") {
-    compareState.error = "Набор системных правил не изменяется.";
-    renderCompareDialog();
-    return;
-  }
-  if (pending.kind === "copy-params") {
-    const target = paramTransferTarget(pending.direction);
-    if (!target || !target.path) {
-      compareState.error = compareState.mode === "vendor" && pending.direction === "policy"
-        ? "Набор системных правил не изменяется."
-        : "Запись невозможна: правило не найдено.";
-      renderCompareDialog();
-      return;
+  const restoring = entries.some((entry) => entry.kind === "restore");
+  if (!restoring) {
+    for (const entry of entries) {
+      const target = paramTransferTarget(entry.direction);
+      if (!target || !target.path || (compareState.mode === "vendor" && target.path === compareState.templatePath)) {
+        compareState.error = "Набор системных правил не изменяется.";
+        renderCompareDialog();
+        return;
+      }
     }
-  } else if (!compareState.policyPath || (pending.kind !== "restore" && !compareState.templatePath)) {
+  } else if (!compareState.policyPath) {
     compareState.error = "Запись невозможна: правило есть только на одной стороне.";
     renderCompareDialog();
     return;
   }
-  const restoring = pending.kind === "restore";
-  const targetIsPolicy = pending.direction === "policy";
   compareState.writing = true;
   compareState.error = "";
   renderCompareDialog();
   try {
     if (restoring) {
       await restoreInheritance();
-    } else if (pending.kind === "copy-params") {
-      const target = paramTransferTarget(pending.direction);
-      await api(target.path, {
-        method: "PATCH",
-        body: writeParamsBody(target.vars, pending.fields || [], target.valueOf, target.present),
-      });
     } else {
-      const place = targetExclusionPlace(targetIsPolicy, pending.bucket);
-      const targetVars = targetIsPolicy ? compareState.policyVars : compareState.templateVars;
-      await api(targetIsPolicy ? compareState.policyPath : compareState.templatePath, {
-        method: "PATCH",
-        body: writeExclusionBody(targetVars, place, pending.items || []),
-      });
+      const directions = [];
+      for (const entry of entries) {
+        if (!directions.includes(entry.direction)) {
+          directions.push(entry.direction);
+        }
+      }
+      for (const direction of directions) {
+        await writeQueuedDirection(direction, entries.filter((entry) => entry.direction === direction));
+      }
     }
-    compareState.pending = null;
+    compareState.pending = [];
     const page = parseComparePage();
     if (!page || !host.isConnected) {
       compareState.writing = false;
