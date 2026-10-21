@@ -2010,12 +2010,44 @@ function transferRulesSearch() {
   return null;
 }
 
+function transferTopModal() {
+  const nodes = [...document.querySelectorAll(".waf-modal-active")].filter((node) => transferLaidOut(node));
+  return nodes.length ? nodes[nodes.length - 1] : null;
+}
+
+function transferHeaderText(node) {
+  const copy = node.cloneNode(true);
+  copy.querySelectorAll("button").forEach((button) => button.remove());
+  return (copy.textContent || "").replace(/\s+/g, " ").trim();
+}
+
+function transferOpenUserRulesSet() {
+  const surface = transferTopModal() || document.body;
+  const headers = [...surface.querySelectorAll("ptaf-form-card-header .content")];
+  for (let index = headers.length - 1; index >= 0; index -= 1) {
+    const header = headers[index];
+    if (header.closest("ptaf-user-rule-form-card, ptaf-user-rule-base-form")) {
+      continue;
+    }
+    const text = transferHeaderText(header);
+    if (!text || text.length > 160) {
+      continue;
+    }
+    if (TRANSFER_USER_RULES_TITLE.test(text)) {
+      return surface;
+    }
+    return null;
+  }
+  return null;
+}
+
 function transferSetToolbar() {
-  if (!transferUserRulesAnchor()) {
+  const surface = transferOpenUserRulesSet();
+  if (!surface) {
     return null;
   }
   const search = transferRulesSearch();
-  if (!search) {
+  if (!search || !surface.contains(search)) {
     return null;
   }
   const searchTop = search.getBoundingClientRect().top;
@@ -2069,7 +2101,11 @@ function transferSetHeader() {
 }
 
 function transferEmptySetHeader() {
-  const nodes = document.querySelectorAll("ptaf-form-card-header .content");
+  const surface = transferOpenUserRulesSet();
+  if (!surface) {
+    return null;
+  }
+  const nodes = surface.querySelectorAll("ptaf-form-card-header .content");
   for (let index = nodes.length - 1; index >= 0; index -= 1) {
     const content = nodes[index];
     if (!transferLaidOut(content) || (content.closest && content.closest("ptaf-user-rule-form-card, ptaf-user-rule-base-form, #" + TRANSFER_BAR_ID))) {
@@ -2086,7 +2122,7 @@ function transferEmptySetHeader() {
 }
 
 function transferPlaceSetButton() {
-  const toolbar = transferSetToolbar() || transferSetHeader() || transferEmptySetHeader();
+  const toolbar = transferOpenUserRulesSet() ? (transferSetToolbar() || transferEmptySetHeader()) : null;
   const existing = document.getElementById(TRANSFER_BAR_ID);
   if (!toolbar) {
     if (existing && existing.dataset.place === "user-rules") {
