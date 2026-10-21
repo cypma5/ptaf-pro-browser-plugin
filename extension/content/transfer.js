@@ -1821,6 +1821,62 @@ function transferPlainError(error) {
   return message || "Не удалось загрузить правило.";
 }
 
+const TRANSFER_NOTICE_KEY = "ptaf-transfer-notice";
+
+function transferInsideUserRules() {
+  return Boolean(transferRulesSearch() || transferUserRulesAnchor() || transferEmptySetHeader());
+}
+
+function transferReloadAfterWrite(message) {
+  try {
+    sessionStorage.setItem(TRANSFER_NOTICE_KEY, JSON.stringify({
+      message,
+      reopen: transferInsideUserRules(),
+    }));
+  } catch (error) {
+    transferToast(message);
+    return;
+  }
+  location.reload();
+}
+
+function transferRestoreNotice() {
+  let stored = null;
+  try {
+    stored = JSON.parse(sessionStorage.getItem(TRANSFER_NOTICE_KEY) || "null");
+    sessionStorage.removeItem(TRANSFER_NOTICE_KEY);
+  } catch (error) {
+    stored = null;
+  }
+  if (!stored || !stored.message) {
+    return;
+  }
+  if (!stored.reopen) {
+    transferToast(stored.message);
+    return;
+  }
+  const started = Date.now();
+  let opened = false;
+  const timer = window.setInterval(() => {
+    if (transferRulesSearch()) {
+      window.clearInterval(timer);
+      transferToast(stored.message);
+      return;
+    }
+    if (!opened) {
+      const header = transferSetHeader();
+      if (header && header.before) {
+        header.before.click();
+        opened = true;
+      }
+    }
+    if (Date.now() - started > 8000) {
+      window.clearInterval(timer);
+      transferToast(stored.message);
+    }
+  }, 400);
+}
+
 async function transferSubmit() {
   if (!transferCanSubmit()) {
     return;
@@ -1832,7 +1888,7 @@ async function transferSubmit() {
     const message = await transferWrite();
     transferState.writing = false;
     transferCloseDialog();
-    transferToast(message);
+    transferReloadAfterWrite(message);
   } catch (error) {
     transferState.writing = false;
     if (transferState.doc && transferState.doc.kind === "user") {
@@ -2412,3 +2468,4 @@ if (document.body) {
   transferWatch();
   transferSchedule();
 }
+transferRestoreNotice();
