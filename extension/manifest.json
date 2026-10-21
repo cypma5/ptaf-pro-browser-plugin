@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PT AF PRO Browser Extension",
-  "version": "1.0.50",
-  "description": "Add or remove one action on every rule, or on rules you select, of the PT Application Firewall policy or template you have open.",
+  "version": "1.0.65",
+  "description": "Add or remove one action on every rule, or on rules you select, of the PT Application Firewall policy or template you have open. Export a rule as JSON and import it on another installation.",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
@@ -25,7 +25,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["content/content.js", "content/compare.js", "content/traffic.js", "content/x509.js", "content/certificates.js"],
+      "js": ["content/content.js", "content/compare.js", "content/traffic.js", "content/x509.js", "content/certificates.js", "content/transfer.js"],
       "run_at": "document_idle"
     }
   ],

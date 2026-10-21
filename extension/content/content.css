@@ -1513,3 +1513,304 @@
   background: transparent;
   cursor: default;
 }
+
+.ptaf-transfer-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ptaf-transfer-trigger {
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ptaf-border);
+  border-radius: 8px;
+  background: var(--ptaf-field);
+  color: var(--ptaf-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 16px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.ptaf-transfer-trigger:hover {
+  background: var(--ptaf-hover);
+}
+
+.ptaf-transfer-trigger:disabled {
+  color: var(--ptaf-disabled);
+  cursor: default;
+}
+
+.ptaf-transfer-backdrop {
+  box-sizing: border-box;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: var(--ptaf-overlay);
+}
+
+.ptaf-transfer-dialog {
+  box-sizing: border-box;
+  width: min(640px, 100%);
+  max-height: calc(100vh - 48px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px 24px 20px;
+  border-radius: 8px;
+  background: var(--ptaf-surface);
+  color: var(--ptaf-text);
+  font-size: 14px;
+  line-height: 20px;
+  box-shadow:
+    0 0 0 1px var(--ptaf-ring),
+    0 16px 40px hsla(229, 30%, 4%, 28%);
+}
+
+.ptaf-transfer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.ptaf-transfer-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.ptaf-transfer-lead,
+.ptaf-transfer-note,
+.ptaf-transfer-reason {
+  margin: 0;
+  color: var(--ptaf-text-secondary);
+}
+
+.ptaf-transfer-error {
+  margin: 0;
+  color: var(--ptaf-error);
+}
+
+.ptaf-transfer-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ptaf-transfer-section h3 {
+  margin: 0;
+  font-size: 13px;
+  line-height: 16px;
+  font-weight: 600;
+}
+
+.ptaf-transfer-field,
+.ptaf-transfer-map {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ptaf-transfer-source {
+  font-weight: 600;
+}
+
+.ptaf-transfer-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 32px;
+  padding: 3px 28px 3px 4px;
+  border: 1px solid var(--ptaf-border);
+  border-radius: 8px;
+  background: var(--ptaf-field);
+  cursor: pointer;
+}
+
+.ptaf-transfer-multiselect {
+  position: relative;
+}
+
+.ptaf-transfer-caret {
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  color: var(--ptaf-text-secondary);
+  font-size: 12px;
+  line-height: 24px;
+  pointer-events: none;
+}
+
+.ptaf-transfer-menu {
+  position: fixed;
+  z-index: 5;
+  max-height: 280px;
+  overflow: auto;
+  padding: 4px 0;
+  border: 1px solid var(--ptaf-border);
+  border-radius: 8px;
+  background: var(--ptaf-surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+.ptaf-transfer-choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 2px 6px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.ptaf-transfer-choice.is-selected {
+  outline: 1px solid var(--ptaf-focus);
+  outline-offset: -1px;
+}
+
+.ptaf-transfer-choice.is-locked {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.ptaf-transfer-choice input {
+  margin-top: 2px;
+}
+
+.ptaf-transfer-choice-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.ptaf-transfer-choice-name {
+  color: var(--ptaf-text);
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.ptaf-transfer-choice-type {
+  color: var(--ptaf-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ptaf-transfer-chips-empty {
+  padding: 0 8px;
+  color: var(--ptaf-disabled);
+  font-size: 13px;
+  line-height: 24px;
+}
+
+.ptaf-transfer-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  height: 24px;
+  padding: 0 4px 0 8px;
+  border-radius: 4px;
+  background: var(--ptaf-hover);
+  color: var(--ptaf-text);
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.ptaf-transfer-chip-remove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font: 14px/16px inherit;
+  cursor: pointer;
+}
+
+.ptaf-transfer-chip-remove:hover {
+  background: var(--ptaf-border);
+}
+
+.ptaf-transfer-chip-remove:disabled {
+  cursor: default;
+}
+
+.ptaf-transfer-select {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--ptaf-border);
+  border-radius: 8px;
+  background: var(--ptaf-field);
+  color: var(--ptaf-text);
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.ptaf-transfer-select:focus-visible,
+.ptaf-transfer-trigger:focus-visible,
+.ptaf-transfer-cancel:focus-visible,
+.ptaf-transfer-submit:focus-visible {
+  outline: 2px solid var(--ptaf-focus);
+  outline-offset: 1px;
+}
+
+.ptaf-transfer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ptaf-transfer-cancel,
+.ptaf-transfer-submit {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.ptaf-transfer-cancel {
+  background: transparent;
+  color: var(--ptaf-text);
+}
+
+.ptaf-transfer-cancel:hover {
+  background: var(--ptaf-hover);
+}
+
+.ptaf-transfer-submit {
+  background: var(--ptaf-contrast);
+  color: var(--ptaf-contrast-text);
+}
+
+.ptaf-transfer-submit:hover {
+  background: var(--ptaf-contrast-hover);
+}
+
+.ptaf-transfer-cancel:disabled,
+.ptaf-transfer-submit:disabled {
+  color: var(--ptaf-disabled);
+  background: var(--ptaf-hover);
+  cursor: default;
+}
