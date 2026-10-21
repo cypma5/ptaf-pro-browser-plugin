@@ -372,7 +372,8 @@ async function trafficApi(path, options) {
   if (!token) {
     throw new Error(trafficError(401));
   }
-  const response = await fetch(path, {
+  await ensurePluginUserAgent();
+  const response = await fetch(pluginUrl(path), {
     method: options && options.method ? options.method : "GET",
     credentials: "same-origin",
     headers: {
