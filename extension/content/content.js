@@ -861,13 +861,13 @@ function confirmationText(dialog) {
     if (kind === "response" || kind === "rst") {
       return `Добавить «${action.name}» на ${selected} отмеченных правилах «${name}», где ещё нет Custom response и Send TCP RST.`;
     }
-    return `Добавить «${action.name}» на ${selected} отмеченных правилах «${name}». Правила без Log to DB будут пропущены.`;
+    return `Добавить «${action.name}» на ${selected} отмеченных правилах «${name}», где уже есть Log to DB. Без Log to DB Send to syslog не работает.`;
   }
   if (operation.mode === "bulk") {
     if (operation.bulk === "DELETE") {
       return `Удалить «${action.name}» со всех правил «${name}».`;
     }
-    return `Добавить «${action.name}» на все правила «${name}».`;
+    return `Добавить «${action.name}» на правила «${name}», где уже есть Log to DB. Без Log to DB Send to syslog не работает.`;
   }
   const source = selectedAction(dialog, "from");
   if (!source) {
@@ -1161,6 +1161,24 @@ async function loadActions(dialog) {
 }
 
 async function applyBulk(dialog, target, operation, action) {
+  if (operation.bulk === "ADD") {
+    await ensureRulePicker(dialog);
+    if (!dialog.isConnected || !rulePicker.ready) {
+      applying = false;
+      setBusy(dialog, false);
+      return;
+    }
+    rulePicker.selected = new Set(rulePicker.rules.filter((rule) => ruleHasKind(rule, "log")).map((rule) => rule.key));
+    if (rulePicker.selected.size === 0) {
+      applying = false;
+      setBusy(dialog, false);
+      updateConfirmation(dialog);
+      setStatus(dialog, "Нет правил с Log to DB. Без него Send to syslog не работает.", "error");
+      return;
+    }
+    await applyFiltered(dialog, action, "ADD");
+    return;
+  }
   setStatus(dialog, "Applying...", "info");
   await api(operationsPath(target), {
     method: "POST",
@@ -1171,7 +1189,7 @@ async function applyBulk(dialog, target, operation, action) {
   });
   applying = false;
   closeDialog();
-  showToast(operation.bulk === "DELETE" ? "Action removed from all rules." : "Action added to all rules.");
+  showToast("Action removed from all rules.");
 }
 
 function actionsBlockedByPhase(phase) {
@@ -1410,6 +1428,9 @@ function ruleMatchesSelectedAction(rule, dialog) {
   if (kind === "response" || kind === "rst") {
     return !ruleHasKind(rule, "response") && !ruleHasKind(rule, "rst");
   }
+  if (kind === "syslog") {
+    return ruleHasKind(rule, "log");
+  }
   return true;
 }
 
@@ -1465,6 +1486,8 @@ function renderRuleRows(dialog) {
       empty.textContent = "Нет правил без Log to DB.";
     } else if (operation.mode === "filter" && filterMode(dialog) === "ADD" && (actionKind(selectedAction(dialog, "to")) === "response" || actionKind(selectedAction(dialog, "to")) === "rst") && !rulePicker.rules.some((rule) => classValue(rule.eventClass) !== "info" && !ruleHasKind(rule, "response") && !ruleHasKind(rule, "rst"))) {
       empty.textContent = "Нет правил без Custom response и Send TCP RST.";
+    } else if (operation.mode === "filter" && filterMode(dialog) === "ADD" && actionKind(selectedAction(dialog, "to")) === "syslog" && !rulePicker.rules.some((rule) => classValue(rule.eventClass) !== "info" && ruleHasKind(rule, "log"))) {
+      empty.textContent = "Нет правил с Log to DB. Без него Send to syslog не работает.";
     } else {
       empty.textContent = "Нет правил по этому фильтру.";
     }

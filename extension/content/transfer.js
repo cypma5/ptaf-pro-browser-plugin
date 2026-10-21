@@ -752,10 +752,11 @@ async function transferExport(button) {
   button.disabled = true;
   try {
     const hit = await transferLocate(page);
+    if (!transferIsUser(hit)) {
+      throw new Error("Выгрузить можно только пользовательское правило.");
+    }
     const catalogs = await transferLoadCatalogs();
-    const payload = transferIsUser(hit)
-      ? transferUserPayload(hit.details, hit.aggregation, catalogs)
-      : transferSystemPayload(hit.details, hit.listed, hit.aggregation, catalogs);
+    const payload = transferUserPayload(hit.details, hit.aggregation, catalogs);
     const name = (payload.rule && payload.rule.name) || (payload.identity && payload.identity.name) || "rule";
     transferDownload(transferFileName(name), payload);
     const actions = payload.refs.actions.length;
@@ -997,14 +998,11 @@ function transferParseFile(text) {
   if (!data || data.format !== "ptaf-rule" || data.version !== 1) {
     throw new Error("Файл не похож на выгрузку правила PT AF.");
   }
-  if (data.kind !== "user" && data.kind !== "system") {
-    throw new Error("В файле не указан тип правила.");
+  if (data.kind !== "user") {
+    throw new Error("Загрузить можно только пользовательское правило.");
   }
-  if (data.kind === "user" && (!data.rule || !data.rule.name || !data.rule.event || !data.rule.configuration)) {
+  if (!data.rule || !data.rule.name || !data.rule.event || !data.rule.configuration) {
     throw new Error("В файле нет описания пользовательского правила.");
-  }
-  if (data.kind === "system" && (!data.identity || !data.state)) {
-    throw new Error("В файле нет описания системного правила.");
   }
   return data;
 }
@@ -1289,24 +1287,7 @@ async function transferWrite() {
     }
     return updated ? `Правило «${rule.name}» обновлено.` : `Правило «${rule.name}» загружено.`;
   }
-  const target = transferState.targetRule;
-  const state = transferApplyMap(transferClone(doc.state), map);
-  const body = {};
-  if (typeof state.enabled === "boolean") {
-    body.enabled = state.enabled;
-  }
-  if (Array.isArray(state.actions)) {
-    body.actions = transferKeptActions(state.actions);
-  }
-  if (state.variables && typeof state.variables === "object") {
-    body.variables = state.variables;
-  }
-  await api(target.detail, { method: "PATCH", body });
-  const aggregation = transferAggregation(doc.aggregation, map);
-  if (aggregation) {
-    await api(target.agg, { method: "PATCH", body: aggregation });
-  }
-  return `Правило «${target.name}» обновлено.`;
+  throw new Error("Загрузить можно только пользовательское правило.");
 }
 
 function transferCloseDialog() {
@@ -2219,44 +2200,10 @@ function transferUserRuleTitle() {
 
 function transferRuleDownloadSlot() {
   const header = transferUserRuleHeader();
-  if (header) {
-    return { slot: header, before: null, header: true };
-  }
-  if (transferRulesSearch()) {
+  if (!header) {
     return null;
   }
-  const bar = transferRuleBar();
-  if (bar && bar.parentElement) {
-    return { slot: bar.parentElement, before: bar };
-  }
-  const modal = transferActiveModal();
-  const editor = transferRuleEditorNode();
-  const page = transferRulePage();
-  const userRules = Boolean(transferUserRulesAnchor()) || /user[_-]rules|with[_-]user[_-]rules/i.test(transferRoute());
-  if (!modal && !editor && !page && !userRules) {
-    return null;
-  }
-  if (page && (page.kind === "policy" || page.kind === "template") && !userRules && !bar) {
-    return null;
-  }
-  const scope = modal
-    || (editor && (editor.closest("ptaf-modal-layer, .waf-modal-active, ptaf-card, form, section, main") || editor.parentElement))
-    || document.body;
-  const panels = [...scope.querySelectorAll(".top-panel")].filter(transferLaidOut);
-  const panel = panels.length ? panels[panels.length - 1] : null;
-  if (panel) {
-    const buttons = [...panel.querySelectorAll("button, ptaf-button")].filter((button) => {
-      return transferVisible(button) && !(button.closest && button.closest(`#${TRANSFER_BAR_ID}, #${TRANSFER_DOWNLOAD_ID}`));
-    });
-    if (buttons.length) {
-      const anchor = buttons[0].closest("ptaf-button") || buttons[0];
-      if (anchor.parentElement) {
-        return { slot: anchor.parentElement, before: anchor };
-      }
-    }
-    return { slot: panel, before: panel.firstChild };
-  }
-  return null;
+  return { slot: header, before: null, header: true };
 }
 
 function transferBindDownload(button) {
@@ -2264,21 +2211,11 @@ function transferBindDownload(button) {
     event.preventDefault();
     event.stopPropagation();
     const userRuleName = transferUserRuleTitle();
-    if (userRuleName) {
-      transferExportByName(userRuleName, button);
+    if (!userRuleName) {
+      transferToast("Выгрузить можно только пользовательское правило.");
       return;
     }
-    const page = transferPage();
-    if (page && page.mode === "rule" && page.ruleRef) {
-      transferExport(button);
-      return;
-    }
-    const name = transferOpenRuleName();
-    if (name) {
-      transferExportByName(name, button);
-      return;
-    }
-    transferExport(button);
+    transferExportByName(userRuleName, button);
   });
 }
 
@@ -2350,63 +2287,10 @@ function transferPlaceBar() {
   transferClearUserRules();
   transferPlaceSetButton();
   transferPlaceRuleDownload();
-  if (document.getElementById(TRANSFER_DOWNLOAD_ID) || (transferUserRulesAnchor() && !transferRulePage())) {
-    return;
+  const bar = document.getElementById(TRANSFER_BAR_ID);
+  if (bar && bar.dataset.place !== "user-rules") {
+    bar.remove();
   }
-  transferSyncTheme();
-  const page = transferPage();
-  const slot = page && transferSlot(page);
-  const existing = document.getElementById(TRANSFER_BAR_ID);
-  if (!page || !slot) {
-    if (existing) {
-      existing.remove();
-    }
-    if (!page && !transferState.writing) {
-      transferCloseDialog();
-    }
-    return;
-  }
-  if (existing && existing.parentElement === slot && existing.dataset.mode === page.mode) {
-    return;
-  }
-  if (existing) {
-    existing.remove();
-  }
-  const host = document.createElement("div");
-  host.id = TRANSFER_BAR_ID;
-  host.dataset.mode = page.mode;
-  host.style.cssText = "all:initial;display:inline-flex;flex:0 0 auto;gap:8px;margin-left:8px;vertical-align:middle;";
-  const theme = typeof attachUi === "function" ? attachUi(host) : null;
-  if (!theme) {
-    return;
-  }
-  if (typeof pageTheme === "function") {
-    theme.dataset.theme = pageTheme();
-  }
-  theme.classList.add("ptaf-transfer-bar");
-  if (page.mode === "rule") {
-    const exportButton = document.createElement("button");
-    exportButton.type = "button";
-    exportButton.className = "ptaf-transfer-trigger";
-    exportButton.textContent = "Выгрузить JSON";
-    exportButton.addEventListener("click", (event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      transferExport(exportButton);
-    });
-    theme.append(exportButton);
-  }
-  const importButton = document.createElement("button");
-  importButton.type = "button";
-  importButton.className = "ptaf-transfer-trigger";
-  importButton.textContent = "Загрузить JSON";
-  importButton.addEventListener("click", (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    transferPickFile();
-  });
-  theme.append(importButton);
-  transferMount(slot, host);
 }
 
 function transferSchedule() {
