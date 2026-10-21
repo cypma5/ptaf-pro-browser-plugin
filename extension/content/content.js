@@ -27,6 +27,41 @@ let domObserver = null;
 let themeObserver = null;
 let extensionStopped = false;
 let detectedTheme = null;
+let pluginUserAgentReady = null;
+
+function pluginUrl(url) {
+  const value = String(url);
+  const hashAt = value.indexOf("#");
+  const before = hashAt === -1 ? value : value.slice(0, hashAt);
+  const hash = hashAt === -1 ? "" : value.slice(hashAt);
+  if (/[?&]ptaf_ext=1(?:&|$)/.test(before)) {
+    return value;
+  }
+  const joiner = before.includes("?") ? "&" : "?";
+  return `${before}${joiner}ptaf_ext=1${hash}`;
+}
+
+function ensurePluginUserAgent() {
+  if (pluginUserAgentReady) {
+    return pluginUserAgentReady;
+  }
+  const attempt = new Promise((resolve) => {
+    try {
+      chrome.runtime.sendMessage({ type: "ensure-plugin-user-agent" }, (response) => {
+        void chrome.runtime.lastError;
+        resolve(Boolean(response && response.ok));
+      });
+    } catch (error) {
+      resolve(false);
+    }
+  });
+  pluginUserAgentReady = attempt.then((ok) => {
+    if (!ok) {
+      pluginUserAgentReady = null;
+    }
+  });
+  return pluginUserAgentReady;
+}
 
 function stylesheetUrl() {
   try {
@@ -325,7 +360,8 @@ async function api(path, options) {
     throw error;
   }
 
-  const response = await fetch(API_ROOT + path, {
+  await ensurePluginUserAgent();
+  const response = await fetch(pluginUrl(API_ROOT + path), {
     method: options && options.method ? options.method : "GET",
     credentials: "same-origin",
     headers: {
@@ -427,7 +463,8 @@ function localeCandidates() {
 async function loadTypeCaptions() {
   for (const locale of localeCandidates()) {
     try {
-      const response = await fetch(`/assets/l10n/${locale}/actions.json`, {
+      await ensurePluginUserAgent();
+      const response = await fetch(pluginUrl(`/assets/l10n/${locale}/actions.json`), {
         credentials: "same-origin",
       });
       if (!response.ok) {
@@ -519,7 +556,8 @@ function textFromLocale(value) {
 async function loadLocaleDocument(fileName) {
   for (const locale of preferredLocales()) {
     try {
-      const response = await fetch(`/assets/l10n/${locale}/${fileName}`, {
+      await ensurePluginUserAgent();
+      const response = await fetch(pluginUrl(`/assets/l10n/${locale}/${fileName}`), {
         credentials: "same-origin",
       });
       const type = response.headers.get("content-type") || "";
@@ -867,7 +905,7 @@ function confirmationText(dialog) {
     if (operation.bulk === "DELETE") {
       return `Удалить «${action.name}» со всех правил «${name}».`;
     }
-    return `Добавить «${action.name}» на правила «${name}», где уже есть Log to DB. Без Log to DB Send to syslog не работает.`;
+    return `Добавить «${action.name}» на все правила «${name}» одним запросом.`;
   }
   const source = selectedAction(dialog, "from");
   if (!source) {
@@ -1161,22 +1199,11 @@ async function loadActions(dialog) {
 }
 
 async function applyBulk(dialog, target, operation, action) {
-  if (operation.bulk === "ADD") {
-    await ensureRulePicker(dialog);
-    if (!dialog.isConnected || !rulePicker.ready) {
-      applying = false;
-      setBusy(dialog, false);
-      return;
-    }
-    rulePicker.selected = new Set(rulePicker.rules.filter((rule) => ruleHasKind(rule, "log")).map((rule) => rule.key));
-    if (rulePicker.selected.size === 0) {
-      applying = false;
-      setBusy(dialog, false);
-      updateConfirmation(dialog);
-      setStatus(dialog, "Нет правил с Log to DB. Без него Send to syslog не работает.", "error");
-      return;
-    }
-    await applyFiltered(dialog, action, "ADD");
+  if (actionKind(action) !== "syslog") {
+    applying = false;
+    setBusy(dialog, false);
+    updateConfirmation(dialog);
+    setStatus(dialog, "Быстрое изменение всех правил работает только для Send to syslog.", "error");
     return;
   }
   setStatus(dialog, "Applying...", "info");
@@ -1189,7 +1216,7 @@ async function applyBulk(dialog, target, operation, action) {
   });
   applying = false;
   closeDialog();
-  showToast("Action removed from all rules.");
+  showToast(operation.bulk === "DELETE" ? "Action removed from all rules." : "Action added to all rules.");
 }
 
 function actionsBlockedByPhase(phase) {

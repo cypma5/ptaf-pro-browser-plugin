@@ -81,7 +81,8 @@ async function certApi(path) {
   if (!token) {
     return null;
   }
-  const response = await fetch(path, {
+  await ensurePluginUserAgent();
+  const response = await fetch(pluginUrl(path), {
     credentials: "same-origin",
     headers: {
       Accept: "application/json",
