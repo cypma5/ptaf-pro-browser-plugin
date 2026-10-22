@@ -1814,3 +1814,472 @@
   background: var(--ptaf-hover);
   cursor: default;
 }
+
+.ptaf-event-view {
+  box-sizing: border-box;
+  width: min(1120px, 100%);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
+  padding: 16px 24px 20px;
+  border-radius: 8px;
+  background: var(--ptaf-surface);
+  color: var(--ptaf-text);
+  font-size: 14px;
+  line-height: 20px;
+  box-shadow:
+    0 0 0 1px var(--ptaf-ring),
+    0 12px 24px rgb(0 0 0 / 16%);
+}
+
+.ptaf-event-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ptaf-event-heading h2 {
+  margin: 0;
+  flex: 1 1 auto;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.ptaf-event-close,
+.ptaf-event-tab {
+  box-sizing: border-box;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--ptaf-border);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: 13px/16px Inter, "Segoe UI", sans-serif;
+  cursor: pointer;
+}
+
+.ptaf-event-tab[aria-selected="true"] {
+  background: var(--ptaf-selected);
+  border-color: var(--ptaf-selected-bar);
+}
+
+.ptaf-event-note {
+  margin: 8px 0 12px;
+  color: var(--ptaf-text-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ptaf-event-tabs {
+  display: flex;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.ptaf-event-panels {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.ptaf-event-summary {
+  margin: 0 0 12px;
+}
+
+.ptaf-event-meta,
+.ptaf-event-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 12px;
+}
+
+.ptaf-event-chip {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--ptaf-hover);
+  color: var(--ptaf-text);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.ptaf-event-chip.is-attack,
+.ptaf-event-chip.is-high {
+  background: var(--ptaf-warning-bg);
+  color: var(--ptaf-warning-fg);
+}
+
+.ptaf-event-chip.is-medium {
+  background: var(--ptaf-selected);
+}
+
+.ptaf-event-match-block {
+  margin: 0 0 16px;
+}
+
+.ptaf-event-match-block h3 {
+  margin: 0 0 12px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.ptaf-event-match-block .ptaf-event-fields + .ptaf-event-fields,
+.ptaf-event-match-block .ptaf-event-subtitle {
+  margin-top: 12px;
+}
+
+.ptaf-event-match-block .ptaf-event-row {
+  grid-template-columns: 140px minmax(0, 1fr);
+}
+
+.ptaf-event-match-block .ptaf-event-label {
+  text-align: right;
+}
+
+.ptaf-event-board {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.ptaf-event-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.ptaf-event-card {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--ptaf-line);
+  border-radius: 8px;
+}
+
+.ptaf-event-card-wide {
+  grid-column: 1 / -1;
+}
+
+.ptaf-event-chip-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  margin-top: 8px;
+}
+
+.ptaf-event-chip-row .ptaf-event-chips {
+  margin: 0;
+}
+
+.ptaf-event-card h3,
+.ptaf-event-subtitle {
+  margin: 0 0 8px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.ptaf-event-subtitle {
+  margin-top: 12px;
+  color: var(--ptaf-text-secondary);
+  font-weight: 500;
+}
+
+.ptaf-event-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.ptaf-event-row {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 12px;
+  align-items: baseline;
+  min-width: 0;
+}
+
+.ptaf-event-pairs {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--ptaf-line);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.ptaf-event-pair {
+  display: grid;
+  grid-template-columns: minmax(96px, 180px) minmax(0, 1fr);
+  gap: 8px;
+  padding: 4px 8px;
+  font: 12px/18px Consolas, "Courier New", monospace;
+}
+
+.ptaf-event-pair:nth-child(odd) {
+  background: var(--ptaf-hover);
+}
+
+.ptaf-event-label {
+  color: var(--ptaf-text-secondary);
+  white-space: nowrap;
+}
+
+.ptaf-event-value {
+  min-width: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.ptaf-event-raw {
+  margin: 0;
+  max-height: calc(100vh - 220px);
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font: 12px/18px Consolas, "Courier New", monospace;
+}
+
+.ptaf-dash {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--ptaf-surface);
+  color: var(--ptaf-text);
+}
+
+.ptaf-dash-bar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 28px 8px;
+}
+
+.ptaf-dash-heading h2 {
+  margin: 0;
+  font-size: 16px;
+  line-height: 24px;
+  font-weight: 600;
+}
+
+.ptaf-dash-heading p {
+  margin: 4px 0 0;
+  color: var(--ptaf-text-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ptaf-dash-tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.ptaf-dash-clear,
+.ptaf-dash-reload {
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.ptaf-dash-clear {
+  background: transparent;
+  color: var(--ptaf-text);
+}
+
+.ptaf-dash-clear:hover {
+  background: var(--ptaf-hover);
+}
+
+.ptaf-dash-clear[hidden] {
+  display: none;
+}
+
+.ptaf-dash-reload {
+  background: var(--ptaf-contrast);
+  color: var(--ptaf-contrast-text);
+}
+
+.ptaf-dash-reload:hover {
+  background: var(--ptaf-contrast-hover);
+}
+
+.ptaf-dash-reload:disabled {
+  color: var(--ptaf-disabled);
+  background: var(--ptaf-hover);
+  cursor: default;
+}
+
+.ptaf-dash-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 0 28px 8px;
+}
+
+.ptaf-dash-legend[hidden],
+.ptaf-dash-status[hidden],
+.ptaf-dash-board[hidden] {
+  display: none;
+}
+
+.ptaf-dash-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ptaf-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.ptaf-dash-key i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.ptaf-dash-filter,
+.ptaf-dash-status {
+  margin: 8px 28px 0;
+  color: var(--ptaf-text-secondary);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ptaf-dash-filter[hidden] {
+  display: none;
+}
+
+.ptaf-dash-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px 28px 32px;
+}
+
+.ptaf-dash-board {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 64px;
+  min-height: 100%;
+}
+
+.ptaf-dash-links {
+  position: absolute;
+  left: 0;
+  top: 0;
+  overflow: visible;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ptaf-dash-column {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+
+.ptaf-dash-column h3 {
+  margin: 0 0 12px;
+  color: var(--ptaf-text-secondary);
+  font-size: 12px;
+  line-height: 16px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.ptaf-dash-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.ptaf-dash-card {
+  position: relative;
+  padding: 12px 28px 12px 14px;
+  border: 1px solid var(--ptaf-line);
+  border-radius: 10px;
+  background: var(--ptaf-field);
+  box-shadow: inset 3px 0 0 var(--dash-color, transparent);
+  cursor: pointer;
+}
+
+.ptaf-dash-card.is-filter {
+  border-color: var(--ptaf-focus);
+}
+
+.ptaf-dash-card h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  line-height: 20px;
+  font-weight: 600;
+}
+
+.ptaf-dash-card p {
+  margin: 0;
+  color: var(--ptaf-text-secondary);
+  font-size: 12px;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+}
+
+.ptaf-dash-meta {
+  margin-top: 4px;
+}
+
+.ptaf-dash-dot {
+  position: absolute;
+  top: 16px;
+  right: 12px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--ptaf-success);
+}
+
+.ptaf-dash-dot[data-tone="warn"] {
+  background: var(--ptaf-warning-fg);
+}
+
+.ptaf-dash-dot[data-tone="bad"] {
+  background: var(--ptaf-error);
+}
+
+.ptaf-dash-empty {
+  margin: 0;
+  color: var(--ptaf-text-muted);
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.ptaf-dash-link {
+  fill: none;
+  stroke-width: 1.6;
+  opacity: 0.85;
+}
+
+.ptaf-dash-board.is-hot .ptaf-dash-card,
+.ptaf-dash-board.is-hot .ptaf-dash-link {
+  transition: opacity 0.15s linear;
+}
+
+.ptaf-dash-board.is-hot .is-dim {
+  opacity: 0.18;
+}
+
+.ptaf-dash-board.is-hot .ptaf-dash-link.is-on {
+  stroke-width: 2.6;
+  opacity: 1;
+}

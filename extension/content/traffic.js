@@ -268,7 +268,7 @@ function trafficPageTheme() {
       return trafficDetectedTheme;
     }
   }
-  const skip = new Set(["ptaf-bulk-actions-button", "ptaf-bulk-dialog", "ptaf-bulk-toast", TRAFFIC_BUTTON_ID, TRAFFIC_DIALOG_ID]);
+  const skip = new Set(["ptaf-bulk-actions-button", "ptaf-bulk-dialog", "ptaf-bulk-toast", TRAFFIC_BUTTON_ID, TRAFFIC_DIALOG_ID, "ptaf-dash-view"]);
   let node = document.elementFromPoint(
     Math.max(0, Math.floor(window.innerWidth / 2)),
     Math.max(0, Math.floor(window.innerHeight / 2))
