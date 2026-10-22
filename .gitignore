@@ -5,3 +5,6 @@ traffic_settings.py
 docs/rule-actions.spec.md
 .cursor
 docs
+extension.crx
+extension.pem
+extension.zip
