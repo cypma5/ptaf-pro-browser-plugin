@@ -150,7 +150,7 @@ function surfaceLuminance() {
       return direct;
     }
   }
-  const skip = new Set([BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-traffic-open", "ptaf-traffic-dialog", "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-dash-view"]);
+  const skip = new Set([BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-traffic-open", "ptaf-traffic-dialog", "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-dash-view", "ptaf-dash-submenu"]);
   let node = document.elementFromPoint(
     Math.max(0, Math.floor(window.innerWidth / 2)),
     Math.max(0, Math.floor(window.innerHeight / 2))
@@ -185,7 +185,7 @@ function pageTheme() {
 
 function syncTheme() {
   const theme = pageTheme();
-  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-dash-view"]) {
+  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-dash-view", "ptaf-dash-submenu"]) {
     const node = document.getElementById(id);
     const root = node && node.shadowRoot && node.shadowRoot.querySelector(".ptaf-theme");
     if (root) {
@@ -213,7 +213,7 @@ function stopExtension() {
   }
   document.removeEventListener("keydown", onKeyDown);
   window.removeEventListener("popstate", scheduleSync);
-  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-dash-view"]) {
+  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-dash-view", "ptaf-dash-submenu"]) {
     const node = document.getElementById(id);
     if (node) {
       node.remove();

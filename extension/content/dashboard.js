@@ -17,6 +17,9 @@ let dashView = null;
 let dashFilterId = "";
 let dashSavedLabel = "";
 let dashLayoutLock = false;
+let dashScreen = "chain";
+
+const DASH_SUBMENU_ID = "ptaf-dash-submenu";
 
 function dashAlive() {
   try {
@@ -234,17 +237,20 @@ function dashOrderBackends(nodes, edges, appRank, listenRank) {
   });
 }
 
+function dashUnique(list, value) {
+  if (value && list.indexOf(value) === -1) {
+    list.push(value);
+  }
+}
+
 function dashBuildGraph(sources) {
-  const vips = dashItems(sources && sources.vips);
-  const profiles = dashItems(sources && sources.profiles);
-  const applications = dashItems(sources && sources.applications);
-  const backends = dashItems(sources && sources.backends);
-  const vipById = new Map(vips.map((vip) => [vip.id, vip]));
-  const backendById = new Map(backends.map((backend) => [backend.id, backend]));
+  const realms = Array.isArray(sources) ? sources : [sources || {}];
+  const multi = realms.length > 1;
   const listenMap = new Map();
   const profileLinks = new Map();
+  const appMap = new Map();
 
-  function addListen(endpoint, profile) {
+  function addListen(endpoint, profile, label) {
     let node = listenMap.get(endpoint.key);
     if (!node) {
       node = {
@@ -262,30 +268,61 @@ function dashBuildGraph(sources) {
       node.protocols.push(endpoint.protocol);
     }
     const profileName = (profile && (profile.name || profile.id)) || "";
-    if (profileName && node.profiles.indexOf(profileName) === -1) {
-      node.profiles.push(profileName);
-    }
+    const shown = profileName && label ? `${profileName} · ${label}` : profileName;
+    dashUnique(node.profiles, shown);
     node.tone = dashWorst(node.tone, endpoint.tone || "ok");
     return node;
   }
 
-  profiles.forEach((profile) => {
-    const listenIds = dashListenEndpoints(profile, vipById).map((endpoint) => addListen(endpoint, profile).id);
-    profileLinks.set(profile.id, {
-      listenIds,
-      backends: dashProfileBackends(profile),
+  realms.forEach((realm) => {
+    const label = realm && realm.label ? String(realm.label) : "";
+    const vips = dashItems(realm && realm.vips);
+    const profiles = dashItems(realm && realm.profiles);
+    const applications = dashItems(realm && realm.applications);
+    const backends = dashItems(realm && realm.backends);
+    const vipById = new Map(vips.map((vip) => [vip.id, vip]));
+    const backendById = new Map(backends.map((backend) => [backend.id, backend]));
+    profiles.forEach((profile) => {
+      const listenIds = dashListenEndpoints(profile, vipById).map((endpoint) => {
+        const key = multi && label ? `${endpoint.key}|${label}` : endpoint.key;
+        return addListen(Object.assign({}, endpoint, { key }), profile, multi ? label : "").id;
+      });
+      profileLinks.set(multi ? `${label}:${profile.id}` : profile.id, {
+        listenIds,
+        backends: dashProfileBackends(profile),
+        backendById,
+      });
+    });
+    applications.forEach((app) => {
+      const appKey = multi ? (app.name || app.id) : app.id;
+      let node = appMap.get(appKey);
+      if (!node) {
+        node = {
+          id: `app:${appKey}`,
+          kind: "app",
+          title: app.name || "Веб-приложение",
+          hosts: [],
+          locations: [],
+          profileRefs: [],
+          tone: "ok",
+        };
+        appMap.set(appKey, node);
+      }
+      dashTextList(app.hosts).forEach((host) => dashUnique(node.hosts, host));
+      dashTextList(app.locations).forEach((location) => dashUnique(node.locations, location));
+      node.tone = dashWorst(node.tone, dashAppTone(app.protection_mode));
+      const refs = Array.isArray(app.traffic_profiles) ? app.traffic_profiles : [];
+      refs.forEach((ref) => {
+        const profileId = typeof ref === "string" ? ref : (ref && (ref.id || ref.traffic_profile_id)) || "";
+        if (!profileId) {
+          return;
+        }
+        dashUnique(node.profileRefs, multi ? `${label}:${profileId}` : profileId);
+      });
     });
   });
 
-  const apps = applications.map((app) => ({
-    id: `app:${app.id}`,
-    kind: "app",
-    title: app.name || "Веб-приложение",
-    hosts: dashTextList(app.hosts),
-    locations: dashTextList(app.locations),
-    profileIds: Array.isArray(app.traffic_profiles) ? app.traffic_profiles.filter((id) => typeof id === "string") : [],
-    tone: dashAppTone(app.protection_mode),
-  }));
+  const apps = [...appMap.values()];
 
   const backendMap = new Map();
   const edges = [];
@@ -306,7 +343,7 @@ function dashBuildGraph(sources) {
   }
 
   apps.forEach((app) => {
-    app.profileIds.forEach((profileId) => {
+    app.profileRefs.forEach((profileId) => {
       const link = profileLinks.get(profileId);
       if (!link) {
         return;
@@ -314,14 +351,15 @@ function dashBuildGraph(sources) {
       link.listenIds.forEach((listenId) => {
         addEdge(listenId, app.id, listenId);
         link.backends.forEach((bound) => {
-          const catalog = backendById.get(bound.id);
-          let node = backendMap.get(bound.id);
+          const catalog = link.backendById.get(bound.id);
+          const address = catalog && catalog.address ? String(catalog.address) : "";
+          const port = catalog && catalog.port != null && catalog.port !== "" ? String(catalog.port) : "";
+          const protocol = catalog && catalog.protocol ? String(catalog.protocol) : "";
+          const endpoint = address ? `${address}${port ? `:${port}` : ""}` : "";
+          const title = (catalog && catalog.name) || endpoint || bound.id;
+          const mergeKey = multi ? `${title}|${endpoint}` : bound.id;
+          let node = backendMap.get(mergeKey);
           if (!node) {
-            const address = catalog && catalog.address ? String(catalog.address) : "";
-            const port = catalog && catalog.port != null && catalog.port !== "" ? String(catalog.port) : "";
-            const protocol = catalog && catalog.protocol ? String(catalog.protocol) : "";
-            const endpoint = address ? `${address}${port ? `:${port}` : ""}` : "";
-            const title = (catalog && catalog.name) || endpoint || bound.id;
             const detailParts = [];
             if (protocol) {
               detailParts.push(protocol);
@@ -330,13 +368,13 @@ function dashBuildGraph(sources) {
               detailParts.push(endpoint);
             }
             node = {
-              id: `backend:${bound.id}`,
+              id: `backend:${mergeKey}`,
               kind: "backend",
               title,
               detail: detailParts.join(" · "),
               tone: "ok",
             };
-            backendMap.set(bound.id, node);
+            backendMap.set(mergeKey, node);
           }
           const enabled = bound.enabled !== false && (!catalog || catalog.enabled !== false);
           node.tone = dashWorst(node.tone, dashBackendTone(enabled, bound.status));
@@ -419,20 +457,91 @@ function dashMenuText(node) {
 }
 
 function dashEnsurePageStyle() {
-  if (document.getElementById(DASH_STYLE_ID)) {
-    return;
+  let style = document.getElementById(DASH_STYLE_ID);
+  if (!style) {
+    style = document.createElement("style");
+    style.id = DASH_STYLE_ID;
+    (document.head || document.documentElement).append(style);
   }
-  const style = document.createElement("style");
-  style.id = DASH_STYLE_ID;
-  style.textContent = [
+  const css = [
     "body.ptaf-dash-open ptaf-panel-menu .item.selected:not(#ptaf-dash-tab) {",
     "  color: var(--kbq-foreground-contrast-secondary) !important;",
     "}",
     "body.ptaf-dash-open #ptaf-dash-tab {",
     "  color: var(--kbq-foreground-contrast) !important;",
     "}",
+    "#ptaf-dash-submenu {",
+    "  position: fixed;",
+    "  z-index: 80;",
+    "  min-width: 220px;",
+    "  padding: 6px;",
+    "  border-radius: 8px;",
+    "  background: var(--kbq-background-bg, #1c2230);",
+    "  color: var(--kbq-foreground-contrast, #fff);",
+    "  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);",
+    "}",
+    "#ptaf-dash-submenu button {",
+    "  display: block;",
+    "  width: 100%;",
+    "  margin: 0;",
+    "  padding: 8px 10px;",
+    "  border: 0;",
+    "  border-radius: 6px;",
+    "  background: transparent;",
+    "  color: inherit;",
+    "  font: inherit;",
+    "  text-align: left;",
+    "  cursor: pointer;",
+    "}",
+    "#ptaf-dash-submenu button:hover,",
+    "#ptaf-dash-submenu button.is-on {",
+    "  background: var(--kbq-states-fade-active, rgba(255, 255, 255, 0.08));",
+    "}",
   ].join("\n");
-  (document.head || document.documentElement).append(style);
+  if (style.textContent !== css) {
+    style.textContent = css;
+  }
+}
+
+function dashCloseSubmenu() {
+  const menu = document.getElementById(DASH_SUBMENU_ID);
+  if (menu) {
+    menu.remove();
+  }
+}
+
+function dashToggleSubmenu(anchor) {
+  if (document.getElementById(DASH_SUBMENU_ID)) {
+    dashCloseSubmenu();
+    return;
+  }
+  dashEnsurePageStyle();
+  const menu = document.createElement("div");
+  menu.id = DASH_SUBMENU_ID;
+  const rect = anchor.getBoundingClientRect();
+  menu.style.top = `${Math.round(rect.bottom + 4)}px`;
+  menu.style.left = `${Math.round(Math.max(8, rect.left))}px`;
+  [
+    ["chain", "Цепочка прослушивания"],
+    ["overview", "Обзорный дашборд"],
+    ["events", "События и RPS"],
+  ].forEach(([id, label]) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.dataset.screen = id;
+    button.textContent = label;
+    if (dashOpen && dashScreen === id) {
+      button.classList.add("is-on");
+    }
+    button.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      dashCloseSubmenu();
+      dashOpenScreen(id);
+    });
+    menu.append(button);
+  });
+  document.body.append(menu);
 }
 
 function dashCreateItem(menu) {
@@ -470,7 +579,7 @@ function dashStopItemEvent(event) {
 
 function dashOnItemClick(event) {
   dashStopItemEvent(event);
-  dashOpenView();
+  dashToggleSubmenu(event.currentTarget);
 }
 
 function dashOnItemKey(event) {
@@ -478,7 +587,7 @@ function dashOnItemKey(event) {
     return;
   }
   dashStopItemEvent(event);
-  dashOpenView();
+  dashToggleSubmenu(event.currentTarget);
 }
 
 function dashApplyChrome() {
@@ -543,17 +652,25 @@ function dashPlaceHost() {
 function dashShell() {
   const root = document.createElement("div");
   root.className = "ptaf-dash";
+  root.dataset.screen = "chain";
   root.innerHTML = [
     '<header class="ptaf-dash-bar">',
     '  <div class="ptaf-dash-heading">',
     "    <h2>Дашборд</h2>",
-    "    <p>IP:порт прослушивания → веб-приложение (Host, Location) → защищаемый сервер</p>",
+    '    <nav class="ptaf-dash-nav">',
+    '      <button type="button" class="ptaf-dash-screen is-on" data-screen="chain" aria-pressed="true">Цепочка прослушивания</button>',
+    '      <button type="button" class="ptaf-dash-screen" data-screen="overview" aria-pressed="false">Обзорный дашборд</button>',
+    '      <button type="button" class="ptaf-dash-screen" data-screen="events" aria-pressed="false">События и RPS</button>',
+    "    </nav>",
+    '    <p class="ptaf-dash-subtitle">IP:порт прослушивания → веб-приложение (Host, Location) → защищаемый сервер</p>',
     "  </div>",
     '  <div class="ptaf-dash-tools">',
     '    <button type="button" class="ptaf-dash-clear" hidden>Показать все</button>',
     '    <button type="button" class="ptaf-dash-reload">Обновить</button>',
     "  </div>",
     "</header>",
+    '<div class="ptaf-dash-overview" hidden></div>',
+    '<div class="ptaf-dash-events" hidden></div>',
     '<div class="ptaf-dash-legend" hidden></div>',
     '<p class="ptaf-dash-filter" hidden></p>',
     '<p class="ptaf-dash-status" hidden></p>',
@@ -705,6 +822,9 @@ function dashRender(theme, model) {
     dashFilterId = "";
   }
   dashView = dashViewOf(model);
+  if (dashScreen !== "chain") {
+    return;
+  }
   const board = theme.querySelector(".ptaf-dash-board");
   const filtered = Boolean(dashFilterId);
   const focus = filtered ? model.byId.get(dashFilterId) : null;
@@ -847,7 +967,54 @@ async function dashLoad(theme) {
     if (token !== dashToken || !dashOpen) {
       return;
     }
-    const model = dashBuildGraph({ applications, profiles, backends, vips });
+    const realms = [{
+      label: "",
+      applications,
+      profiles,
+      backends,
+      vips,
+    }];
+    let installations = [];
+    try {
+      installations = dashItems(await api("/config/ptaf_installations"));
+    } catch (error) {
+      installations = [];
+    }
+    if (token !== dashToken || !dashOpen) {
+      return;
+    }
+    const linked = await Promise.all(installations.map(async (inst) => {
+      if (!inst || !inst.id) {
+        return null;
+      }
+      const prefix = `/installation/${inst.id}/proxy/`;
+      try {
+        const [linkedApps, linkedProfiles, linkedBackends, linkedVips] = await Promise.all([
+          api(`${prefix}config%2Fapplications`),
+          api(`${prefix}config%2Ftraffic_profiles`),
+          api(`${prefix}config%2Fbackends`),
+          api(`${prefix}config%2Fvips`),
+        ]);
+        return {
+          label: inst.short_name || inst.name || "",
+          applications: linkedApps,
+          profiles: linkedProfiles,
+          backends: linkedBackends,
+          vips: linkedVips,
+        };
+      } catch (error) {
+        return null;
+      }
+    }));
+    if (token !== dashToken || !dashOpen) {
+      return;
+    }
+    linked.forEach((realm) => {
+      if (realm) {
+        realms.push(realm);
+      }
+    });
+    const model = dashBuildGraph(realms.length > 1 ? realms : realms[0]);
     if (!model.listens.length && !model.apps.length) {
       dashSetStatus(theme, "В этом пространстве нет профилей трафика и веб-приложений.");
     } else {
@@ -880,7 +1047,20 @@ function dashBind(theme) {
   svg.style.top = "0";
   svg.style.overflow = "visible";
   svg.style.pointerEvents = "none";
-  theme.querySelector(".ptaf-dash-reload").addEventListener("click", () => dashLoad(theme));
+  theme.querySelector(".ptaf-dash-reload").addEventListener("click", () => {
+    if (dashScreen === "overview") {
+      dashOverviewReload(theme);
+      return;
+    }
+    if (dashScreen === "events") {
+      dashEventsReload(theme);
+      return;
+    }
+    dashLoad(theme);
+  });
+  theme.querySelectorAll(".ptaf-dash-screen").forEach((button) => {
+    button.addEventListener("click", () => dashOpenScreen(button.dataset.screen));
+  });
   theme.querySelector(".ptaf-dash-clear").addEventListener("click", () => {
     dashFilterId = "";
     if (dashModel) {
@@ -938,46 +1118,115 @@ function dashBind(theme) {
   }
 }
 
-function dashOpenView() {
+function dashApplyScreen(theme) {
+  const root = theme.querySelector(".ptaf-dash");
+  const chain = dashScreen === "chain";
+  root.dataset.screen = dashScreen;
+  const subtitle = theme.querySelector(".ptaf-dash-subtitle");
+  const captions = {
+    chain: "IP:порт прослушивания → веб-приложение (Host, Location) → защищаемый сервер",
+    overview: "События и трафик текущего пространства за выбранный период",
+    events: "RPS за 14 дней и события безопасности в выбранном окне",
+  };
+  subtitle.textContent = captions[dashScreen] || captions.chain;
+  theme.querySelectorAll(".ptaf-dash-screen").forEach((button) => {
+    const on = button.dataset.screen === dashScreen;
+    button.classList.toggle("is-on", on);
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  theme.querySelector(".ptaf-dash-overview").hidden = dashScreen !== "overview";
+  const events = theme.querySelector(".ptaf-dash-events");
+  if (events) {
+    events.hidden = dashScreen !== "events";
+  }
+  if (!chain) {
+    theme.querySelector(".ptaf-dash-clear").hidden = true;
+    theme.querySelector(".ptaf-dash-filter").hidden = true;
+    theme.querySelector(".ptaf-dash-status").hidden = true;
+    theme.querySelector(".ptaf-dash-legend").hidden = true;
+  }
+}
+
+function dashEnsureHost() {
+  if (dashHost) {
+    return dashHost;
+  }
+  const host = document.createElement("div");
+  host.id = DASH_HOST_ID;
+  host.style.position = "fixed";
+  host.style.left = "0";
+  host.style.right = "0";
+  host.style.bottom = "0";
+  host.style.zIndex = "40";
+  host.style.display = "none";
+  const theme = attachUi(host);
+  if (!theme) {
+    return null;
+  }
+  theme.append(dashShell());
+  dashBind(theme);
+  document.body.append(host);
+  dashHost = host;
+  return host;
+}
+
+function dashOpenScreen(screen) {
   if (!dashAlive()) {
     dashStop();
     return;
   }
-  if (!dashHost) {
-    const host = document.createElement("div");
-    host.id = DASH_HOST_ID;
-    host.style.position = "fixed";
-    host.style.left = "0";
-    host.style.right = "0";
-    host.style.bottom = "0";
-    host.style.zIndex = "40";
-    host.style.display = "none";
-    const theme = attachUi(host);
-    if (!theme) {
-      return;
-    }
-    theme.append(dashShell());
-    dashBind(theme);
-    document.body.append(host);
-    dashHost = host;
+  const host = dashEnsureHost();
+  if (!host) {
+    return;
   }
+  const theme = host.shadowRoot.querySelector(".ptaf-theme");
+  const same = dashOpen && dashScreen === screen;
   if (!dashOpen) {
     const selected = document.querySelector("ptaf-panel-menu .item.selected");
     dashSavedLabel = selected && selected.id !== DASH_ITEM_ID ? dashMenuText(selected) : dashSavedLabel;
   }
+  dashScreen = screen;
   dashOpen = true;
-  dashHost.hidden = false;
-  dashHost.style.display = "block";
+  host.hidden = false;
+  host.style.display = "block";
   dashPlaceHost();
-  const theme = dashHost.shadowRoot.querySelector(".ptaf-theme");
   if (typeof pageTheme === "function") {
     theme.dataset.theme = pageTheme();
   }
   dashApplyChrome();
+  dashApplyScreen(theme);
+  if (same) {
+    return;
+  }
+  if (screen === "overview") {
+    dashEventsPause();
+    dashToken += 1;
+    const reload = theme.querySelector(".ptaf-dash-reload");
+    if (reload) {
+      reload.disabled = false;
+    }
+    dashOverviewOpen(theme);
+    return;
+  }
+  if (screen === "events") {
+    dashOverviewPause();
+    dashToken += 1;
+    const reload = theme.querySelector(".ptaf-dash-reload");
+    if (reload) {
+      reload.disabled = false;
+    }
+    dashEventsOpen(theme);
+    return;
+  }
+  dashOverviewPause();
+  dashEventsPause();
   dashLoad(theme);
 }
 
 function dashCloseView(restore) {
+  dashCloseSubmenu();
+  dashOverviewPause();
+  dashEventsPause();
   dashOpen = false;
   dashFilterId = "";
   dashToken += 1;
@@ -1005,6 +1254,15 @@ function dashCloseView(restore) {
 }
 
 function dashOnPageClick(event) {
+  const submenu = document.getElementById(DASH_SUBMENU_ID);
+  if (submenu) {
+    const inside = event.target && event.target.closest && (
+      event.target.closest(`#${DASH_SUBMENU_ID}`) || event.target.closest(`#${DASH_ITEM_ID}`)
+    );
+    if (!inside) {
+      submenu.remove();
+    }
+  }
   if (!dashOpen) {
     return;
   }
@@ -1015,12 +1273,21 @@ function dashOnPageClick(event) {
 }
 
 function dashOnKey(event) {
-  if (!dashOpen || event.key !== "Escape") {
+  if (event.key !== "Escape") {
+    return;
+  }
+  if (document.getElementById(DASH_SUBMENU_ID)) {
+    event.preventDefault();
+    event.stopPropagation();
+    dashCloseSubmenu();
+    return;
+  }
+  if (!dashOpen) {
     return;
   }
   event.preventDefault();
   event.stopPropagation();
-  if (dashFilterId && dashHost) {
+  if (dashScreen === "chain" && dashFilterId && dashHost) {
     dashFilterId = "";
     const theme = dashHost.shadowRoot && dashHost.shadowRoot.querySelector(".ptaf-theme");
     if (theme && dashModel) {
@@ -1032,6 +1299,7 @@ function dashOnKey(event) {
 }
 
 function dashOnResize() {
+  dashCloseSubmenu();
   if (dashOpen) {
     dashPlaceHost();
     const theme = dashHost && dashHost.shadowRoot && dashHost.shadowRoot.querySelector(".ptaf-theme");
@@ -1045,6 +1313,9 @@ function dashStop() {
   }
   dashStopped = true;
   dashOpen = false;
+  dashCloseSubmenu();
+  dashOverviewPause();
+  dashEventsPause();
   if (dashFrame) {
     cancelAnimationFrame(dashFrame);
     dashFrame = 0;
