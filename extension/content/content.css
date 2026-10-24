@@ -2299,60 +2299,12 @@
   display: none;
 }
 
-.ptaf-mx-rule-skip {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  max-height: 46vh;
-  overflow: auto;
-}
-
-.ptaf-mx-rule-skip[hidden] {
-  display: none;
-}
-
-.ptaf-mx-skip-card {
-  padding: 8px;
-  border: 1px solid var(--ptaf-line);
-  border-radius: 8px;
-}
-
-.ptaf-mx-skip-card h4 {
-  margin: 0 0 6px;
-  color: var(--ptaf-text);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0;
-  line-height: 16px;
-  text-transform: none;
-}
-
-.ptaf-mx-skip-card p {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 6px;
-  margin: 0;
-  color: var(--ptaf-text-secondary);
-  font-size: 12px;
-  line-height: 16px;
-}
-
-.ptaf-mx-skip-card b {
-  color: var(--ptaf-text);
-  font-weight: 500;
-  overflow-wrap: anywhere;
-}
-
 .ptaf-mx-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(200px, 260px);
   gap: 16px;
   align-items: start;
   min-width: 0;
-}
-
-.ptaf-mx-layout.is-skip {
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 380px);
 }
 
 .ptaf-mx-board {

@@ -51,8 +51,20 @@ let compareObserver = null;
 let compareThemeObserver = null;
 let compareStopped = false;
 let compareExperimental = false;
+let comparePageOverride = null;
+let compareHost = null;
+
+function compareDialogHost() {
+  if (compareHost && compareHost.isConnected) {
+    return compareHost;
+  }
+  return document.getElementById(COMPARE_DIALOG_ID);
+}
 
 function parseComparePage() {
+  if (comparePageOverride) {
+    return comparePageOverride;
+  }
   const match = location.pathname.match(COMPARE_RULE_PATH);
   if (!match) {
     return null;
@@ -1211,17 +1223,22 @@ function closeCompareDialog() {
   if (compareState.writing) {
     return;
   }
-  const host = document.getElementById(COMPARE_DIALOG_ID);
+  const host = compareDialogHost();
   if (host) {
     host.remove();
   }
+  compareHost = null;
+  comparePageOverride = null;
   compareState.token += 1;
   compareState.pending = [];
 }
 
 function compareDialogTheme() {
-  const host = document.getElementById(COMPARE_DIALOG_ID);
-  const theme = host && host.shadowRoot && host.shadowRoot.querySelector(".ptaf-theme");
+  const host = compareDialogHost();
+  const theme = host && (
+    (host.shadowRoot && host.shadowRoot.querySelector(".ptaf-theme"))
+    || (host.closest && host.closest(".ptaf-theme"))
+  );
   if (theme) {
     theme.dataset.theme = pageTheme();
   }
@@ -1233,11 +1250,8 @@ function compareDialogTheme() {
 }
 
 function renderCompareDialog() {
-  const host = document.getElementById(COMPARE_DIALOG_ID);
-  if (!host || !host.shadowRoot) {
-    return;
-  }
-  const root = host.shadowRoot.querySelector(".ptaf-compare-body");
+  const host = compareDialogHost();
+  const root = host && (host.shadowRoot || host).querySelector(".ptaf-compare-body");
   if (!root) {
     return;
   }
@@ -2265,6 +2279,7 @@ function openCompareDialog() {
   if (compareState.writing || !compareExperimental) {
     return;
   }
+  comparePageOverride = null;
   closeCompareDialog();
   const host = document.createElement("div");
   host.id = COMPARE_DIALOG_ID;
@@ -2305,6 +2320,47 @@ function openCompareDialog() {
   document.body.appendChild(host);
   dialog.focus();
   loadCompare(host);
+}
+
+function openComparePanel(parent, page, onClose) {
+  if (!parent || compareState.writing || !compareExperimental || !page || !page.entityId || !page.ruleRef) {
+    return false;
+  }
+  closeCompareDialog();
+  comparePageOverride = {
+    kind: page.kind === "template" ? "template" : "policy",
+    entityId: page.entityId,
+    ruleRef: page.ruleRef,
+  };
+  const host = document.createElement("section");
+  host.className = "ptaf-mx-compare";
+  compareHost = host;
+  const dialog = document.createElement("div");
+  dialog.className = "ptaf-compare-dialog";
+  dialog.tabIndex = -1;
+  const titleBar = document.createElement("div");
+  titleBar.className = "ptaf-compare-titlebar";
+  const title = document.createElement("h2");
+  title.textContent = "Сравнение правила";
+  const close = document.createElement("button");
+  close.type = "button";
+  close.className = "ptaf-compare-close";
+  close.setAttribute("aria-label", "Закрыть");
+  close.textContent = "×";
+  close.addEventListener("click", () => {
+    closeCompareDialog();
+    if (onClose) {
+      onClose();
+    }
+  });
+  titleBar.append(title, close);
+  const body = document.createElement("div");
+  body.className = "ptaf-compare-body";
+  dialog.append(titleBar, body);
+  host.append(dialog);
+  parent.append(host);
+  loadCompare(host);
+  return true;
 }
 
 async function loadCompare(host) {
@@ -2661,7 +2717,7 @@ async function restoreInheritance() {
 
 async function writeCompare() {
   const entries = pendingList();
-  const host = document.getElementById(COMPARE_DIALOG_ID);
+  const host = compareDialogHost();
   if (!entries.length || compareState.writing || !host) {
     return;
   }
@@ -2750,14 +2806,16 @@ function stopCompare() {
   if (button) {
     button.remove();
   }
-  const dialog = document.getElementById(COMPARE_DIALOG_ID);
+  const dialog = compareDialogHost();
   if (dialog) {
     dialog.remove();
   }
+  compareHost = null;
+  comparePageOverride = null;
 }
 
 function onCompareKey(event) {
-  if (event.key === "Escape" && document.getElementById(COMPARE_DIALOG_ID)) {
+  if (event.key === "Escape" && compareDialogHost()) {
     closeCompareDialog();
   }
 }
@@ -2801,10 +2859,12 @@ function hideCompareUi() {
     button.remove();
   }
   if (!compareState.writing) {
-    const dialog = document.getElementById(COMPARE_DIALOG_ID);
+    const dialog = compareDialogHost();
     if (dialog) {
       dialog.remove();
     }
+    compareHost = null;
+    comparePageOverride = null;
   }
 }
 
