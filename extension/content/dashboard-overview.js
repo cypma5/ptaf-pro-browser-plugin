@@ -21,6 +21,13 @@ const DASH_OV_LEVELS = [
   { id: "none", label: "Нет" },
 ];
 
+const DASH_OV_CLASS = {
+  attack: { label: "Атака", color: "#e06b5c" },
+  weakness: { label: "Уязвимость", color: "#e0a045" },
+  incident: { label: "Инцидент", color: "#c46bd4" },
+  info: { label: "Инфо", color: "#8d93a8" },
+};
+
 let dashOvPreset = "day";
 let dashOvApps = [];
 let dashOvSelected = new Set();
@@ -331,6 +338,9 @@ function dashOvShares(body, rows) {
     track.className = "ptaf-ov-share-track";
     const bar = document.createElement("i");
     bar.style.width = `${Math.max(2, row.share * 100)}%`;
+    if (row.color) {
+      bar.style.background = row.color;
+    }
     track.append(bar);
     const meta = document.createElement("span");
     meta.className = "ptaf-ov-share-meta";
@@ -486,6 +496,7 @@ function dashOverviewEnsure(theme) {
     "</div>",
     '<div class="ptaf-ov-mid"></div>',
     '<div class="ptaf-ov-bottom"></div>',
+    '<div class="ptaf-ov-attack"></div>',
   ].join("");
   const period = root.querySelector(".ptaf-ov-period");
   DASH_OV_PRESETS.forEach((preset) => {
@@ -566,6 +577,208 @@ function dashOvChartTotal(settled) {
   return items.reduce((sum, bucket) => {
     return sum + (bucket.items || []).reduce((inner, item) => inner + (Number(item.count) || 0), 0);
   }, 0);
+}
+
+function dashOvGroupText(group, key) {
+  const value = group && group[key];
+  if (Array.isArray(value)) {
+    return value.map((item) => String(item || "").trim()).filter(Boolean).join(", ");
+  }
+  if (value == null) {
+    return "";
+  }
+  return String(value).trim();
+}
+
+function dashOvBulletin(value) {
+  const text = String(value || "").trim();
+  if (!text) {
+    return "";
+  }
+  const id = text.match(/PT-\d{4}-\d+/i);
+  return id ? id[0].toUpperCase() : text;
+}
+
+function dashOvActionColor(name) {
+  const text = String(name || "").toLowerCase();
+  if (/block|блокир|close|закры/.test(text)) {
+    return "#e06b5c";
+  }
+  if (/log|журнал/.test(text)) {
+    return "#e0a045";
+  }
+  return "#5b8def";
+}
+
+function dashOvClassColor(name) {
+  const known = DASH_OV_CLASS[String(name || "").toLowerCase()];
+  return known ? known.color : "#8d93a8";
+}
+
+function dashOvClassLabel(name) {
+  const known = DASH_OV_CLASS[String(name || "").toLowerCase()];
+  return known ? known.label : String(name || "");
+}
+
+function dashOvCodeColor(code) {
+  const number = Number(code);
+  if (number >= 500) {
+    return "#e06b5c";
+  }
+  if (number >= 400) {
+    return "#e0a045";
+  }
+  if (number >= 300) {
+    return "#5b8def";
+  }
+  if (number >= 200) {
+    return "#2f9e6b";
+  }
+  return "#8d93a8";
+}
+
+function dashOvShareCard(host, title, note, settled, labelOf, colorOf) {
+  const result = dashOvResult(settled);
+  if (!result.ok) {
+    return;
+  }
+  const card = dashOvCard(title, note);
+  const rows = dashOvTop((result.data && result.data.items) || [], labelOf);
+  rows.forEach((row) => {
+    if (!row.remainder && colorOf) {
+      row.color = colorOf(row.label);
+    }
+  });
+  if (!rows.length) {
+    dashOvMessage(card.body, "Нет событий за выбранный период");
+  } else {
+    dashOvShares(card.body, rows);
+  }
+  host.append(card.card);
+}
+
+function dashOvTargetSettled(pack) {
+  const path = dashOvResult(pack.paths);
+  const host = dashOvResult(pack.hosts);
+  const uri = dashOvResult(pack.uris);
+  if (path.ok && dashOvTop(path.data.items || [], (item) => dashOvGroupText(item.group, "request_path")).length) {
+    return { settled: pack.paths, key: "request_path" };
+  }
+  if (host.ok && dashOvTop(host.data.items || [], (item) => dashOvGroupText(item.group, "request_host")).length) {
+    return { settled: pack.hosts, key: "request_host" };
+  }
+  if (uri.ok) {
+    return { settled: pack.uris, key: "request_uri" };
+  }
+  if (path.ok) {
+    return { settled: pack.paths, key: "request_path" };
+  }
+  if (host.ok) {
+    return { settled: pack.hosts, key: "request_host" };
+  }
+  return null;
+}
+
+function dashOvStatusCard(host, settled) {
+  const result = dashOvResult(settled);
+  if (!result.ok) {
+    return;
+  }
+  const items = (result.data && result.data.items) || [];
+  const byCode = new Map();
+  let passed = 0;
+  let numeric = false;
+  items.forEach((item) => {
+    const group = item.group || {};
+    const code = dashOvGroupText(group, "response_status_code");
+    const count = Number(item.count) || 0;
+    if (!/^\d{3}$/.test(code)) {
+      return;
+    }
+    numeric = true;
+    byCode.set(code, (byCode.get(code) || 0) + count);
+    if (group.event_severity === "high" && code.startsWith("2")) {
+      passed += count;
+    }
+  });
+  const card = dashOvCard("Коды ответа", "Код ответа приложения на запрос, по которому сработало правило");
+  if (!numeric) {
+    dashOvMessage(card.body, "Коды ответа в событиях не заполнены");
+    host.append(card.card);
+    return;
+  }
+  const line = document.createElement("p");
+  line.className = "ptaf-ov-note";
+  line.textContent = passed
+    ? `${dashOvCompact(passed)} событий высокой критичности получили ответ 2xx`
+    : "Событий высокой критичности с ответом 2xx нет";
+  card.card.insertBefore(line, card.body);
+  const rows = [...byCode.entries()]
+    .map(([code, count]) => ({ label: code, count, color: dashOvCodeColor(code) }))
+    .sort((left, right) => right.count - left.count);
+  const total = rows.reduce((sum, row) => sum + row.count, 0);
+  const top = rows.slice(0, 5).map((row) => ({
+    label: row.label,
+    count: row.count,
+    share: row.count / total,
+    color: row.color,
+  }));
+  const rest = rows.slice(5).reduce((sum, row) => sum + row.count, 0);
+  if (rest > 0) {
+    top.push({ label: "Прочее", count: rest, share: rest / total, remainder: true });
+  }
+  dashOvShares(card.body, top);
+  host.append(card.card);
+}
+
+function dashOvAttack(root, pack) {
+  let host = root.querySelector(".ptaf-ov-attack");
+  if (!host) {
+    host = document.createElement("div");
+    host.className = "ptaf-ov-attack";
+    root.append(host);
+  }
+  host.replaceChildren();
+  dashOvShareCard(
+    host,
+    "Действия",
+    "Block и Log по событиям. На стенде без метрики блокировок это единственный такой разрез.",
+    pack.actions,
+    (item) => dashOvGroupText(item.group, "event_actions"),
+    dashOvActionColor,
+  );
+  dashOvShareCard(
+    host,
+    "Класс события",
+    "Атака, уязвимость, инцидент и инфо считаются отдельно от топа правил.",
+    pack.classes,
+    (item) => dashOvClassLabel(dashOvGroupText(item.group, "event_class")),
+    (label) => {
+      const found = Object.values(DASH_OV_CLASS).find((entry) => entry.label === label);
+      return found ? found.color : dashOvClassColor(label);
+    },
+  );
+  const target = dashOvTargetSettled(pack);
+  if (target) {
+    dashOvShareCard(
+      host,
+      "Цели атак",
+      "Адреса, по которым приходили события.",
+      target.settled,
+      (item) => dashOvGroupText(item.group, target.key),
+      () => "#5b8def",
+    );
+  }
+  dashOvShareCard(
+    host,
+    "Бюллетени",
+    "Номера бюллетеней PT из классификации события.",
+    pack.bulletins,
+    (item) => dashOvBulletin(dashOvGroupText(item.group, "classifications")),
+    () => "#e06b5c",
+  );
+  dashOvStatusCard(host, pack.statuses);
+  host.hidden = host.childElementCount === 0;
 }
 
 function dashOverviewRender(theme, pack) {
@@ -753,6 +966,7 @@ function dashOverviewRender(theme, pack) {
     dashOvTable(rulesCard.body, table.data.items || []);
   }
   bottom.append(rulesCard.card);
+  dashOvAttack(root, pack);
 }
 
 async function dashOverviewLoad(theme) {
@@ -812,11 +1026,39 @@ async function dashOverviewLoad(theme) {
     dashOvPost("/metrics/timeseries", metric({ name: "rps" })),
     dashOvPost("/metrics/timeseries", metric({ name: "rps_blocked" })),
     api("/config/applications"),
+    dashOvPost("/threats/events/count_query", events(["event_actions"], {
+      sort: { key: "count", order: "desc" },
+      page: { offset: 0, length: 20 },
+    })),
+    dashOvPost("/threats/events/count_query", events(["event_class"], {
+      sort: { key: "count", order: "desc" },
+      page: { offset: 0, length: 20 },
+    })),
+    dashOvPost("/threats/events/count_query", events(["request_path"], {
+      sort: { key: "count", order: "desc" },
+      page: { offset: 0, length: 20 },
+    })),
+    dashOvPost("/threats/events/count_query", events(["request_host"], {
+      sort: { key: "count", order: "desc" },
+      page: { offset: 0, length: 20 },
+    })),
+    dashOvPost("/threats/events/count_query", events(["request_uri"], {
+      sort: { key: "count", order: "desc" },
+      page: { offset: 0, length: 20 },
+    })),
+    dashOvPost("/threats/events/count_query", events(["classifications"], {
+      sort: { key: "count", order: "desc" },
+      page: { offset: 0, length: 20 },
+    })),
+    dashOvPost("/threats/events/count_query", events(["response_status_code", "event_severity"], {
+      sort: { key: "count", order: "desc" },
+      page: { offset: 0, length: 40 },
+    })),
   ]);
   if (token !== dashOvToken || !dashOvActive) {
     return;
   }
-  const [requests, blocked, histogram, chart, rules, appCounts, sources, table, rps, rpsBlocked, applications] = jobs;
+  const [requests, blocked, histogram, chart, rules, appCounts, sources, table, rps, rpsBlocked, applications, actions, classes, paths, hosts, uris, bulletins, statuses] = jobs;
   let coreRps = null;
   if (dashOvGone(rps)) {
     const period = encodeURIComponent(JSON.stringify({ start: range.start, end: range.end }));
@@ -863,6 +1105,13 @@ async function dashOverviewLoad(theme) {
       rpsBlocked,
       coreRps,
       granularity,
+      actions,
+      classes,
+      paths,
+      hosts,
+      uris,
+      bulletins,
+      statuses,
     });
   } catch (error) {
     status.hidden = false;

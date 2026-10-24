@@ -18,6 +18,34 @@ let dashFilterId = "";
 let dashSavedLabel = "";
 let dashLayoutLock = false;
 let dashScreen = "chain";
+let dashShowEvents = false;
+let dashEventPreset = "1d";
+let dashEventCustom = null;
+let dashEventCounts = new Map();
+let dashEventToken = 0;
+let dashInstallIds = [""];
+
+const DASH_EVENT_PRESETS = [
+  { id: "5m", label: "За последние 5 минут", seconds: 300 },
+  { id: "10m", label: "За последние 10 минут", seconds: 600 },
+  { id: "15m", label: "За последние 15 минут", seconds: 900 },
+  { id: "30m", label: "За последние 30 минут", seconds: 1800 },
+  { id: "1h", label: "За последний час", seconds: 3600 },
+  { id: "6h", label: "За последние 6 часов", seconds: 21600 },
+  { id: "12h", label: "За последние 12 часов", seconds: 43200 },
+  { id: "1d", label: "За последний день", seconds: 86400 },
+  { id: "1w", label: "За последнюю неделю", seconds: 604800 },
+  { id: "1mo", label: "За последний месяц", seconds: 2592000 },
+  { id: "all", label: "За все время", seconds: 0 },
+  { id: "custom", label: "За период" },
+];
+
+const DASH_EVENT_LEVELS = [
+  { id: "high", label: "Высокая" },
+  { id: "medium", label: "Средняя" },
+  { id: "low", label: "Низкая" },
+  { id: "none", label: "Нет" },
+];
 
 const DASH_SUBMENU_ID = "ptaf-dash-submenu";
 
@@ -301,12 +329,16 @@ function dashBuildGraph(sources) {
           id: `app:${appKey}`,
           kind: "app",
           title: app.name || "Веб-приложение",
+          eventName: app.name ? String(app.name).trim() : "",
           hosts: [],
           locations: [],
           profileRefs: [],
           tone: "ok",
         };
         appMap.set(appKey, node);
+      }
+      if (!node.eventName && app.name) {
+        node.eventName = String(app.name).trim();
       }
       dashTextList(app.hosts).forEach((host) => dashUnique(node.hosts, host));
       dashTextList(app.locations).forEach((location) => dashUnique(node.locations, location));
@@ -525,6 +557,7 @@ function dashToggleSubmenu(anchor) {
     ["chain", "Цепочка прослушивания"],
     ["overview", "Обзорный дашборд"],
     ["events", "События и RPS"],
+    ["match", "Совпадения"],
   ].forEach(([id, label]) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -649,6 +682,322 @@ function dashPlaceHost() {
   dashHost.style.top = `${top}px`;
 }
 
+function dashEventPad(value) {
+  return String(value).padStart(2, "0");
+}
+
+function dashEventStamp(timestamp) {
+  const date = new Date(timestamp * 1000);
+  return `${dashEventPad(date.getDate())}.${dashEventPad(date.getMonth() + 1)}.${date.getFullYear()} ${dashEventPad(date.getHours())}:${dashEventPad(date.getMinutes())}:${dashEventPad(date.getSeconds())}`;
+}
+
+function dashEventDateValue(date) {
+  return `${date.getFullYear()}-${dashEventPad(date.getMonth() + 1)}-${dashEventPad(date.getDate())}`;
+}
+
+function dashEventTimeValue(date) {
+  return `${dashEventPad(date.getHours())}:${dashEventPad(date.getMinutes())}:${dashEventPad(date.getSeconds())}`;
+}
+
+function dashEventButtonLabel() {
+  if (dashEventPreset === "custom" && dashEventCustom) {
+    return `${dashEventStamp(dashEventCustom.start)} — ${dashEventStamp(dashEventCustom.end)}`;
+  }
+  const preset = DASH_EVENT_PRESETS.find((item) => item.id === dashEventPreset);
+  return preset ? preset.label : "За последний день";
+}
+
+function dashEventRange() {
+  const end = Math.floor(Date.now() / 1000);
+  if (dashEventPreset === "custom" && dashEventCustom) {
+    return { start: dashEventCustom.start, end: dashEventCustom.end };
+  }
+  if (dashEventPreset === "all") {
+    return { start: 0, end };
+  }
+  const preset = DASH_EVENT_PRESETS.find((item) => item.id === dashEventPreset);
+  const seconds = preset && preset.seconds ? preset.seconds : 86400;
+  return { start: Math.max(0, end - seconds), end };
+}
+
+function dashEventUrl(installId) {
+  const clean = "threats/events/count_query";
+  if (!installId) {
+    return `/${clean}`;
+  }
+  return `/installation/${installId}/proxy/${encodeURIComponent(clean)}`;
+}
+
+async function dashEventQuery(installId, range) {
+  const pageLength = 100;
+  const items = [];
+  let offset = 0;
+  let total = Infinity;
+  while (offset < total) {
+    const body = await api(dashEventUrl(installId), {
+      method: "POST",
+      body: {
+        timerange: { start: range.start, end: range.end },
+        groupby: ["app_name", "event_severity"],
+        page: { offset, length: pageLength },
+      },
+    });
+    const batch = Array.isArray(body) ? body : (body && body.items) || [];
+    items.push(...batch);
+    const reported = Number(body && body.total);
+    total = Number.isFinite(reported) ? reported : items.length;
+    if (!batch.length || batch.length < pageLength) {
+      break;
+    }
+    offset += batch.length;
+  }
+  return { items };
+}
+
+function dashEventAbsorb(map, body) {
+  const items = Array.isArray(body) ? body : (body && body.items) || [];
+  items.forEach((item) => {
+    const group = (item && item.group) || item || {};
+    const name = typeof group.app_name === "string" ? group.app_name.trim() : "";
+    if (!name) {
+      return;
+    }
+    const level = group.event_severity ? String(group.event_severity) : "none";
+    const count = Number(item.count) || 0;
+    if (!count) {
+      return;
+    }
+    let row = map.get(name);
+    if (!row) {
+      row = {};
+      map.set(name, row);
+    }
+    row[level] = (row[level] || 0) + count;
+  });
+}
+
+function dashEventCloseUi(theme) {
+  if (!theme) {
+    return;
+  }
+  const menu = theme.querySelector(".ptaf-dash-period-menu");
+  if (menu) {
+    menu.hidden = true;
+  }
+  const dialog = theme.querySelector(".ptaf-dash-range");
+  if (dialog) {
+    dialog.hidden = true;
+  }
+  const button = theme.querySelector(".ptaf-dash-period-button");
+  if (button) {
+    button.setAttribute("aria-expanded", "false");
+  }
+}
+
+function dashEventSyncControls(theme) {
+  if (!theme) {
+    return;
+  }
+  const input = theme.querySelector(".ptaf-dash-events-toggle input");
+  if (input) {
+    input.checked = dashShowEvents;
+  }
+  const button = theme.querySelector(".ptaf-dash-period-button");
+  const menu = theme.querySelector(".ptaf-dash-period-menu");
+  if (button) {
+    button.disabled = !dashShowEvents;
+    button.textContent = dashEventButtonLabel();
+    button.title = button.textContent;
+    button.setAttribute("aria-expanded", menu && !menu.hidden ? "true" : "false");
+  }
+  theme.querySelectorAll(".ptaf-dash-period-item").forEach((item) => {
+    item.classList.toggle("is-on", item.dataset.preset === dashEventPreset);
+  });
+}
+
+function dashEventField(theme, edge, part) {
+  return theme.querySelector(`.ptaf-dash-range input[data-edge="${edge}"][data-part="${part}"]`);
+}
+
+function dashEventWriteFields(theme, start, end) {
+  const from = new Date(start * 1000);
+  const to = new Date(end * 1000);
+  dashEventField(theme, "start", "date").value = dashEventDateValue(from);
+  dashEventField(theme, "start", "time").value = dashEventTimeValue(from);
+  dashEventField(theme, "end", "date").value = dashEventDateValue(to);
+  dashEventField(theme, "end", "time").value = dashEventTimeValue(to);
+}
+
+function dashEventRangeNote(theme, message) {
+  const note = theme.querySelector(".ptaf-dash-range-error");
+  if (!note) {
+    return;
+  }
+  note.hidden = !message;
+  note.textContent = message || "";
+}
+
+function dashEventParse(dateValue, timeValue) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateValue || "")) {
+    return { error: "Неверная дата" };
+  }
+  if (!/^\d{2}:\d{2}(:\d{2})?$/.test(timeValue || "")) {
+    return { error: "Неверный формат времени" };
+  }
+  const [year, month, day] = dateValue.split("-").map(Number);
+  const parts = timeValue.split(":").map(Number);
+  const hours = parts[0];
+  const minutes = parts[1];
+  const seconds = parts.length > 2 ? parts[2] : 0;
+  if (hours > 23 || minutes > 59 || seconds > 59) {
+    return { error: "Неверный формат времени" };
+  }
+  const date = new Date(year, month - 1, day, hours, minutes, seconds, 0);
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return { error: "Неверная дата" };
+  }
+  return { value: Math.floor(date.getTime() / 1000) };
+}
+
+function dashEventOpenRange(theme) {
+  const dialog = theme.querySelector(".ptaf-dash-range");
+  if (!dialog) {
+    return;
+  }
+  const menu = theme.querySelector(".ptaf-dash-period-menu");
+  if (menu) {
+    menu.hidden = true;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  const range = dashEventCustom || { start: now - 3600, end: now };
+  dashEventWriteFields(theme, range.start, range.end);
+  dashEventRangeNote(theme, "");
+  dialog.hidden = false;
+  const first = dashEventField(theme, "start", "time");
+  if (first) {
+    first.focus();
+  }
+  dashEventSyncControls(theme);
+}
+
+function dashEventSubmitRange(theme, event) {
+  event.preventDefault();
+  const start = dashEventParse(dashEventField(theme, "start", "date").value, dashEventField(theme, "start", "time").value);
+  if (start.error) {
+    dashEventRangeNote(theme, start.error);
+    return;
+  }
+  const end = dashEventParse(dashEventField(theme, "end", "date").value, dashEventField(theme, "end", "time").value);
+  if (end.error) {
+    dashEventRangeNote(theme, end.error);
+    return;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  if (start.value > now || end.value > now) {
+    dashEventRangeNote(theme, "Дата не должна быть больше сегодняшней");
+    return;
+  }
+  if (start.value > end.value) {
+    dashEventRangeNote(theme, "Начало периода не должно быть позднее его конца");
+    return;
+  }
+  dashEventPreset = "custom";
+  dashEventCustom = { start: start.value, end: end.value };
+  const dialog = theme.querySelector(".ptaf-dash-range");
+  if (dialog) {
+    dialog.hidden = true;
+  }
+  dashEventRangeNote(theme, "");
+  dashEventSyncControls(theme);
+  dashEventLoad(theme);
+}
+
+function dashEventBadges(card, node) {
+  if (!dashShowEvents || !node.eventName) {
+    return;
+  }
+  const counts = dashEventCounts.get(node.eventName);
+  if (!counts) {
+    return;
+  }
+  const known = new Set(DASH_EVENT_LEVELS.map((level) => level.id));
+  const levels = DASH_EVENT_LEVELS.concat(
+    Object.keys(counts)
+      .filter((id) => !known.has(id) && counts[id])
+      .sort()
+      .map((id) => ({ id, label: id })),
+  );
+  const row = document.createElement("div");
+  row.className = "ptaf-dash-severities";
+  levels.forEach((level) => {
+    const count = counts[level.id] || 0;
+    if (!count) {
+      return;
+    }
+    const chip = document.createElement("span");
+    chip.className = `ptaf-dash-sev ptaf-dash-sev-${level.id}`;
+    chip.textContent = typeof dashOvCompact === "function" ? dashOvCompact(count) : String(count);
+    chip.title = `${level.label}: ${count}`;
+    row.append(chip);
+  });
+  if (row.childElementCount) {
+    card.append(row);
+  }
+}
+
+async function dashEventLoad(theme) {
+  if (!theme || !dashShowEvents || dashScreen !== "chain" || !dashOpen) {
+    return;
+  }
+  const token = dashEventToken + 1;
+  dashEventToken = token;
+  const schemeToken = dashToken;
+  dashEventCounts = new Map();
+  if (dashModel) {
+    dashRender(theme, dashModel);
+  }
+  const status = theme.querySelector(".ptaf-dash-status");
+  const keepScheme = Boolean(status && !status.hidden && status.dataset.kind === "scheme");
+  if (!keepScheme) {
+    dashSetStatus(theme, "Читаем события…", "events");
+  }
+  const range = dashEventRange();
+  const ids = dashInstallIds.length ? dashInstallIds : [""];
+  const jobs = await Promise.allSettled(ids.map((id) => dashEventQuery(id, range)));
+  if (token !== dashEventToken || schemeToken !== dashToken || !dashShowEvents || dashScreen !== "chain" || !dashOpen) {
+    return;
+  }
+  const map = new Map();
+  let ok = 0;
+  let firstError = null;
+  jobs.forEach((job) => {
+    if (job.status === "fulfilled") {
+      ok += 1;
+      dashEventAbsorb(map, job.value);
+    } else if (!firstError) {
+      firstError = job.reason;
+    }
+  });
+  if (!ok) {
+    dashEventCounts = new Map();
+    if (dashModel) {
+      dashRender(theme, dashModel);
+    }
+    const board = theme.querySelector(".ptaf-dash-board");
+    if (board && !board.hidden) {
+      dashSetStatus(theme, firstError ? dashErrorText(firstError) : "Не удалось прочитать события.", "events");
+    }
+    return;
+  }
+  dashEventCounts = map;
+  if (status && status.dataset.kind === "events") {
+    dashSetStatus(theme, "");
+  }
+  if (dashModel) {
+    dashRender(theme, dashModel);
+  }
+}
+
 function dashShell() {
   const root = document.createElement("div");
   root.className = "ptaf-dash";
@@ -661,16 +1010,23 @@ function dashShell() {
     '      <button type="button" class="ptaf-dash-screen is-on" data-screen="chain" aria-pressed="true">Цепочка прослушивания</button>',
     '      <button type="button" class="ptaf-dash-screen" data-screen="overview" aria-pressed="false">Обзорный дашборд</button>',
     '      <button type="button" class="ptaf-dash-screen" data-screen="events" aria-pressed="false">События и RPS</button>',
+    '      <button type="button" class="ptaf-dash-screen" data-screen="match" aria-pressed="false">Совпадения</button>',
     "    </nav>",
     '    <p class="ptaf-dash-subtitle">IP:порт прослушивания → веб-приложение (Host, Location) → защищаемый сервер</p>',
     "  </div>",
     '  <div class="ptaf-dash-tools">',
+    '    <label class="ptaf-dash-events-toggle"><input type="checkbox">Отобразить события</label>',
+    '    <div class="ptaf-dash-period">',
+    '      <button type="button" class="ptaf-dash-period-button" disabled aria-expanded="false" aria-haspopup="true">За последний день</button>',
+    '      <div class="ptaf-dash-period-menu" hidden></div>',
+    "    </div>",
     '    <button type="button" class="ptaf-dash-clear" hidden>Показать все</button>',
     '    <button type="button" class="ptaf-dash-reload">Обновить</button>',
     "  </div>",
     "</header>",
     '<div class="ptaf-dash-overview" hidden></div>',
     '<div class="ptaf-dash-events" hidden></div>',
+    '<div class="ptaf-dash-match" hidden></div>',
     '<div class="ptaf-dash-legend" hidden></div>',
     '<p class="ptaf-dash-filter" hidden></p>',
     '<p class="ptaf-dash-status" hidden></p>',
@@ -690,6 +1046,24 @@ function dashShell() {
     '      <div class="ptaf-dash-cards" data-column="backend"></div>',
     "    </section>",
     "  </div>",
+    "</div>",
+    '<div class="ptaf-dash-range" hidden role="dialog" aria-label="Выбор периода">',
+    '  <form class="ptaf-dash-range-card">',
+    "    <h3>Выбор периода</h3>",
+    '    <div class="ptaf-dash-range-row"><span>с</span>',
+    '      <input type="time" step="1" data-edge="start" data-part="time" aria-label="Время начала" required>',
+    '      <input type="date" data-edge="start" data-part="date" aria-label="Дата начала" required>',
+    "    </div>",
+    '    <div class="ptaf-dash-range-row"><span>по</span>',
+    '      <input type="time" step="1" data-edge="end" data-part="time" aria-label="Время конца" required>',
+    '      <input type="date" data-edge="end" data-part="date" aria-label="Дата конца" required>',
+    "    </div>",
+    '    <p class="ptaf-dash-range-error" hidden></p>',
+    '    <div class="ptaf-dash-range-actions">',
+    '      <button type="submit" class="ptaf-dash-range-apply">Применить фильтр</button>',
+    '      <button type="button" class="ptaf-dash-range-cancel">Отмена</button>',
+    "    </div>",
+    "  </form>",
     "</div>",
   ].join("");
   return root;
@@ -746,6 +1120,7 @@ function dashCard(node) {
     const locations = document.createElement("p");
     locations.textContent = `Location: ${node.locations.length ? node.locations.join(", ") : "—"}`;
     card.append(hosts, locations);
+    dashEventBadges(card, node);
   } else if (node.detail) {
     const detail = document.createElement("p");
     detail.className = "ptaf-dash-meta";
@@ -938,10 +1313,15 @@ function dashHighlight(theme, id) {
   });
 }
 
-function dashSetStatus(theme, message) {
+function dashSetStatus(theme, message, kind) {
   const status = theme.querySelector(".ptaf-dash-status");
   status.hidden = !message;
   status.textContent = message || "";
+  if (message) {
+    status.dataset.kind = kind || "scheme";
+  } else {
+    delete status.dataset.kind;
+  }
 }
 
 function dashErrorText(error) {
@@ -954,6 +1334,7 @@ function dashErrorText(error) {
 async function dashLoad(theme) {
   const token = dashToken + 1;
   dashToken = token;
+  dashEventToken += 1;
   const reload = theme.querySelector(".ptaf-dash-reload");
   reload.disabled = true;
   dashSetStatus(theme, "Читаем схему…");
@@ -968,6 +1349,7 @@ async function dashLoad(theme) {
       return;
     }
     const realms = [{
+      id: "",
       label: "",
       applications,
       profiles,
@@ -996,6 +1378,7 @@ async function dashLoad(theme) {
           api(`${prefix}config%2Fvips`),
         ]);
         return {
+          id: inst.id,
           label: inst.short_name || inst.name || "",
           applications: linkedApps,
           profiles: linkedProfiles,
@@ -1020,7 +1403,11 @@ async function dashLoad(theme) {
     } else {
       dashSetStatus(theme, "");
     }
+    dashInstallIds = realms.map((realm) => realm.id || "");
     dashRender(theme, model);
+    if (dashShowEvents && model.apps.length) {
+      dashEventLoad(theme);
+    }
   } catch (error) {
     if (token !== dashToken || !dashOpen) {
       return;
@@ -1047,6 +1434,73 @@ function dashBind(theme) {
   svg.style.top = "0";
   svg.style.overflow = "visible";
   svg.style.pointerEvents = "none";
+  const periodMenu = theme.querySelector(".ptaf-dash-period-menu");
+  DASH_EVENT_PRESETS.forEach((preset) => {
+    if (preset.id === "all") {
+      const rule = document.createElement("div");
+      rule.className = "ptaf-dash-period-rule";
+      periodMenu.append(rule);
+    }
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "ptaf-dash-period-item";
+    item.dataset.preset = preset.id;
+    item.textContent = preset.label;
+    item.addEventListener("click", () => {
+      periodMenu.hidden = true;
+      if (preset.id === "custom") {
+        dashEventOpenRange(theme);
+        return;
+      }
+      dashEventPreset = preset.id;
+      dashEventSyncControls(theme);
+      dashEventLoad(theme);
+    });
+    periodMenu.append(item);
+  });
+  theme.querySelector(".ptaf-dash-period-button").addEventListener("click", () => {
+    const button = theme.querySelector(".ptaf-dash-period-button");
+    if (!periodMenu || button.disabled) {
+      return;
+    }
+    periodMenu.hidden = !periodMenu.hidden;
+    dashEventSyncControls(theme);
+  });
+  theme.querySelector(".ptaf-dash-events-toggle input").addEventListener("change", (event) => {
+    dashShowEvents = event.target.checked;
+    dashEventCloseUi(theme);
+    dashEventSyncControls(theme);
+    if (!dashShowEvents) {
+      dashEventToken += 1;
+      dashEventCounts = new Map();
+      const status = theme.querySelector(".ptaf-dash-status");
+      if (status && status.dataset.kind === "events") {
+        dashSetStatus(theme, "");
+      }
+      if (dashModel && dashScreen === "chain") {
+        dashRender(theme, dashModel);
+      }
+      return;
+    }
+    dashEventLoad(theme);
+  });
+  theme.querySelector(".ptaf-dash-range-card").addEventListener("submit", (event) => {
+    dashEventSubmitRange(theme, event);
+  });
+  theme.querySelector(".ptaf-dash-range-cancel").addEventListener("click", () => {
+    dashEventCloseUi(theme);
+  });
+  theme.addEventListener("click", (event) => {
+    if (!periodMenu || periodMenu.hidden) {
+      return;
+    }
+    const period = theme.querySelector(".ptaf-dash-period");
+    if (period && !period.contains(event.target)) {
+      periodMenu.hidden = true;
+      dashEventSyncControls(theme);
+    }
+  });
+  dashEventSyncControls(theme);
   theme.querySelector(".ptaf-dash-reload").addEventListener("click", () => {
     if (dashScreen === "overview") {
       dashOverviewReload(theme);
@@ -1056,12 +1510,23 @@ function dashBind(theme) {
       dashEventsReload(theme);
       return;
     }
+    if (dashScreen === "match") {
+      dashMatchReload(theme);
+      return;
+    }
     dashLoad(theme);
   });
   theme.querySelectorAll(".ptaf-dash-screen").forEach((button) => {
     button.addEventListener("click", () => dashOpenScreen(button.dataset.screen));
   });
   theme.querySelector(".ptaf-dash-clear").addEventListener("click", () => {
+    if (dashScreen === "match") {
+      dashMxFilter = null;
+      dashMxRule = "";
+      dashMxName = "";
+      dashMxPaint(theme);
+      return;
+    }
     dashFilterId = "";
     if (dashModel) {
       dashRender(theme, dashModel);
@@ -1127,6 +1592,7 @@ function dashApplyScreen(theme) {
     chain: "IP:порт прослушивания → веб-приложение (Host, Location) → защищаемый сервер",
     overview: "События и трафик текущего пространства за выбранный период",
     events: "RPS за 14 дней и события безопасности в выбранном окне",
+    match: "Щелчок по приложению показывает больше правил, щелчок по правилу — больше Matched names",
   };
   subtitle.textContent = captions[dashScreen] || captions.chain;
   theme.querySelectorAll(".ptaf-dash-screen").forEach((button) => {
@@ -1139,11 +1605,20 @@ function dashApplyScreen(theme) {
   if (events) {
     events.hidden = dashScreen !== "events";
   }
+  const match = theme.querySelector(".ptaf-dash-match");
+  if (match) {
+    match.hidden = dashScreen !== "match";
+  }
   if (!chain) {
-    theme.querySelector(".ptaf-dash-clear").hidden = true;
-    theme.querySelector(".ptaf-dash-filter").hidden = true;
     theme.querySelector(".ptaf-dash-status").hidden = true;
     theme.querySelector(".ptaf-dash-legend").hidden = true;
+    dashEventCloseUi(theme);
+    if (dashScreen === "match" && typeof dashMxSyncChrome === "function") {
+      dashMxSyncChrome(theme);
+    } else {
+      theme.querySelector(".ptaf-dash-clear").hidden = true;
+      theme.querySelector(".ptaf-dash-filter").hidden = true;
+    }
   }
 }
 
@@ -1200,6 +1675,7 @@ function dashOpenScreen(screen) {
   }
   if (screen === "overview") {
     dashEventsPause();
+    dashMatchPause();
     dashToken += 1;
     const reload = theme.querySelector(".ptaf-dash-reload");
     if (reload) {
@@ -1210,6 +1686,7 @@ function dashOpenScreen(screen) {
   }
   if (screen === "events") {
     dashOverviewPause();
+    dashMatchPause();
     dashToken += 1;
     const reload = theme.querySelector(".ptaf-dash-reload");
     if (reload) {
@@ -1218,8 +1695,20 @@ function dashOpenScreen(screen) {
     dashEventsOpen(theme);
     return;
   }
+  if (screen === "match") {
+    dashOverviewPause();
+    dashEventsPause();
+    dashToken += 1;
+    const reload = theme.querySelector(".ptaf-dash-reload");
+    if (reload) {
+      reload.disabled = false;
+    }
+    dashMatchOpen(theme);
+    return;
+  }
   dashOverviewPause();
   dashEventsPause();
+  dashMatchPause();
   dashLoad(theme);
 }
 
@@ -1227,6 +1716,7 @@ function dashCloseView(restore) {
   dashCloseSubmenu();
   dashOverviewPause();
   dashEventsPause();
+  dashMatchPause();
   dashOpen = false;
   dashFilterId = "";
   dashToken += 1;
@@ -1285,6 +1775,25 @@ function dashOnKey(event) {
   if (!dashOpen) {
     return;
   }
+  const theme = dashHost && dashHost.shadowRoot && dashHost.shadowRoot.querySelector(".ptaf-theme");
+  const dialog = theme && theme.querySelector(".ptaf-dash-range");
+  if (dialog && !dialog.hidden) {
+    event.preventDefault();
+    event.stopPropagation();
+    dialog.hidden = true;
+    return;
+  }
+  const menu = theme && theme.querySelector(".ptaf-dash-period-menu");
+  if (menu && !menu.hidden) {
+    event.preventDefault();
+    event.stopPropagation();
+    menu.hidden = true;
+    const button = theme.querySelector(".ptaf-dash-period-button");
+    if (button) {
+      button.setAttribute("aria-expanded", "false");
+    }
+    return;
+  }
   event.preventDefault();
   event.stopPropagation();
   if (dashScreen === "chain" && dashFilterId && dashHost) {
@@ -1292,6 +1801,16 @@ function dashOnKey(event) {
     const theme = dashHost.shadowRoot && dashHost.shadowRoot.querySelector(".ptaf-theme");
     if (theme && dashModel) {
       dashRender(theme, dashModel);
+    }
+    return;
+  }
+  if (dashScreen === "match" && dashMxFilter && dashHost) {
+    dashMxFilter = null;
+    dashMxRule = "";
+    dashMxName = "";
+    const theme = dashHost.shadowRoot && dashHost.shadowRoot.querySelector(".ptaf-theme");
+    if (theme) {
+      dashMxPaint(theme);
     }
     return;
   }
@@ -1316,6 +1835,7 @@ function dashStop() {
   dashCloseSubmenu();
   dashOverviewPause();
   dashEventsPause();
+  dashMatchPause();
   if (dashFrame) {
     cancelAnimationFrame(dashFrame);
     dashFrame = 0;

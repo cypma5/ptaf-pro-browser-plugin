@@ -3,6 +3,8 @@ const EVENT_DOWNLOAD_LABEL = "Скачать JSON";
 const EVENT_IMPORT_ID = "ptaf-event-import";
 const EVENT_IMPORT_LABEL = "Импорт JSON";
 const EVENT_VIEW_ID = "ptaf-event-view";
+const DECODE_ID = "ptaf-decode-pop";
+const DECODE_STYLE_ID = "ptaf-decode-style";
 const EVENT_FORMAT = "ptaf-security-event";
 const EVENT_FORMAT_VERSION = 1;
 const EVENT_UUID = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
@@ -59,9 +61,14 @@ const EVENT_FIELDS = [
 
 let eventFrame = 0;
 let eventObserver = null;
+let eventResourceObserver = null;
 let eventDownloading = false;
 let eventStopped = false;
 let eventExperimental = false;
+let decodeOrigin = "";
+let decodeRange = null;
+let decodeWatching = false;
+let decodePointerInSource = false;
 
 function eventContextAlive() {
   try {
@@ -84,6 +91,11 @@ function stopEvents() {
     eventObserver.disconnect();
     eventObserver = null;
   }
+  if (eventResourceObserver) {
+    eventResourceObserver.disconnect();
+    eventResourceObserver = null;
+  }
+  stopDecode();
   for (const id of [EVENT_DOWNLOAD_ID, EVENT_IMPORT_ID, EVENT_VIEW_ID]) {
     const node = document.getElementById(id);
     if (node) {
@@ -130,6 +142,35 @@ function eventIdFromPerformance() {
     }
   }
   return best;
+}
+
+function rememberEventResource(url) {
+  const match = String(url || "").match(EVENT_DETAIL);
+  if (!match || !document.documentElement) {
+    return;
+  }
+  document.documentElement.dataset.ptafLastEvent = match[1];
+}
+
+function watchEventResources() {
+  try {
+    performance.getEntriesByType("resource").forEach((entry) => rememberEventResource(entry.name));
+  } catch (error) {
+    /* the page can hide the resource timeline */
+  }
+  if (eventResourceObserver || typeof PerformanceObserver !== "function") {
+    return;
+  }
+  try {
+    eventResourceObserver = new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) {
+        rememberEventResource(entry.name);
+      }
+    });
+    eventResourceObserver.observe({ type: "resource", buffered: true });
+  } catch (error) {
+    eventResourceObserver = null;
+  }
 }
 
 function currentEventId() {
@@ -848,16 +889,101 @@ function fillEventDetails(panel, source) {
   panel.append(board);
 }
 
+function setPlainText(node, value) {
+  const text = value == null ? "" : String(value);
+  const created = document.createTextNode(text);
+  if (!created || created.nodeType !== Node.TEXT_NODE) {
+    return;
+  }
+  node.replaceChildren(created);
+}
+
+function protectPlainNode(node) {
+  node.setAttribute("contenteditable", "false");
+  node.spellcheck = false;
+  node.draggable = false;
+  node.setAttribute("translate", "no");
+  if (node.dataset.ptafPlainBound) {
+    return;
+  }
+  node.dataset.ptafPlainBound = "1";
+  for (const type of ["dragstart", "dragover", "drop", "paste", "cut", "beforeinput"]) {
+    node.addEventListener(type, (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+  }
+}
+
+function plainTextHost(node) {
+  const el = node && node.nodeType === 1 ? node : node && node.parentElement;
+  if (!el || typeof el.closest !== "function") {
+    return false;
+  }
+  return Boolean(el.closest(".ptaf-decode-out, .ptaf-event-raw"));
+}
+
+function attackSelectionText() {
+  const found = [];
+  if (typeof window.getSelection === "function") {
+    found.push(window.getSelection());
+  }
+  for (const id of [DECODE_ID, EVENT_VIEW_ID]) {
+    const host = document.getElementById(id);
+    const root = host && host.shadowRoot;
+    if (root && typeof root.getSelection === "function") {
+      try {
+        found.push(root.getSelection());
+      } catch (error) {
+        /* selection is unavailable in this shadow root */
+      }
+    }
+  }
+  for (const selection of found) {
+    if (!selection || selection.isCollapsed) {
+      continue;
+    }
+    if (!plainTextHost(selection.anchorNode)) {
+      continue;
+    }
+    return selection.toString();
+  }
+  return null;
+}
+
+function copyEventInPlainText(event) {
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  if (path.some((node) => plainTextHost(node))) {
+    return true;
+  }
+  return event.target && (event.target.id === DECODE_ID || event.target.id === EVENT_VIEW_ID) && attackSelectionText() != null;
+}
+
+function onAttackCopy(event) {
+  if (!copyEventInPlainText(event) || !event.clipboardData) {
+    return;
+  }
+  const text = attackSelectionText();
+  if (text == null) {
+    return;
+  }
+  event.preventDefault();
+  event.stopPropagation();
+  event.clipboardData.clearData();
+  event.clipboardData.setData("text/plain", text);
+}
+
 function fillRawPanel(panel, raw, emptyLabel) {
   const view = rawViewText(raw);
   const pre = document.createElement("pre");
   pre.className = "ptaf-event-raw";
+  protectPlainNode(pre);
   if (view.binary) {
-    pre.textContent = `${emptyLabel} в двоичном виде, ${view.size} байт.`;
+    setPlainText(pre, `${emptyLabel} в двоичном виде, ${view.size} байт.`);
   } else if (!view.text) {
-    pre.textContent = `${emptyLabel} не сохранён.`;
+    setPlainText(pre, `${emptyLabel} не сохранён.`);
   } else {
-    pre.textContent = view.text;
+    setPlainText(pre, view.text);
   }
   panel.append(pre);
 }
@@ -1057,6 +1183,618 @@ function placeEventDownload() {
   }
 }
 
+function cleanDecodeText(value) {
+  return String(value || "").replace(/\u00a0/g, " ").replace(/[\u200b\u200c\u200d\ufeff]/g, "").trim();
+}
+
+function textIsMostlyBinary(text) {
+  const sample = Math.min(text.length, 240);
+  if (!sample) {
+    return true;
+  }
+  let bad = 0;
+  for (let index = 0; index < sample; index += 1) {
+    const code = text.charCodeAt(index);
+    if (code === 9 || code === 10 || code === 13) {
+      continue;
+    }
+    if (code < 32) {
+      bad += 1;
+    }
+  }
+  return bad / sample > 0.15;
+}
+
+function urlDecodeText(value) {
+  const prepared = cleanDecodeText(value).replace(/%u([0-9a-fA-F]{4})/g, (match, hex) => {
+    const code = parseInt(hex, 16);
+    return Number.isFinite(code) ? String.fromCharCode(code) : match;
+  });
+  try {
+    return decodeURIComponent(prepared);
+  } catch (error) {
+    const bytes = [];
+    for (let index = 0; index < prepared.length; index += 1) {
+      const hex = prepared.slice(index + 1, index + 3);
+      if (prepared[index] === "%" && /^[0-9a-fA-F]{2}$/.test(hex)) {
+        bytes.push(parseInt(hex, 16));
+        index += 2;
+        continue;
+      }
+      const code = prepared.charCodeAt(index);
+      if (code < 128) {
+        bytes.push(code);
+        continue;
+      }
+      const encoded = new TextEncoder().encode(prepared.charAt(index));
+      for (const byte of encoded) {
+        bytes.push(byte);
+      }
+    }
+    return new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(bytes));
+  }
+}
+
+function base64DecodeText(value) {
+  let text = cleanDecodeText(value).replace(/\s+/g, "");
+  if ((text.startsWith('"') && text.endsWith('"') && text.length > 2) || (text.startsWith("'") && text.endsWith("'") && text.length > 2)) {
+    text = text.slice(1, -1).replace(/\s+/g, "");
+  }
+  const dataUrl = text.match(/^data:[^,]*,([\s\S]*)$/i);
+  if (dataUrl) {
+    text = dataUrl[1].replace(/\s+/g, "");
+  }
+  if (text.length < 4 || !/^[A-Za-z0-9+/_-]+={0,2}$/.test(text)) {
+    throw new Error("Выделенный текст не похож на Base64.");
+  }
+  text = text.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = text.length % 4;
+  if (pad === 1) {
+    throw new Error("Выделенный текст не похож на Base64.");
+  }
+  if (pad) {
+    text += "=".repeat(4 - pad);
+  }
+  let binary = "";
+  try {
+    binary = atob(text);
+  } catch (error) {
+    throw new Error("Не удалось декодировать Base64.");
+  }
+  if (!binary) {
+    throw new Error("Base64 декодировался в пустую строку.");
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  let decoded = binary;
+  try {
+    decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (error) {
+    decoded = binary;
+  }
+  if (textIsMostlyBinary(decoded)) {
+    throw new Error("Base64 не является текстом.");
+  }
+  return decoded;
+}
+
+function nodeInDecodeSource(node) {
+  const el = node && node.nodeType === 1 ? node : node && node.parentElement;
+  if (!el || typeof el.closest !== "function") {
+    return false;
+  }
+  if (el.closest(".ptaf-decode")) {
+    return false;
+  }
+  if (el.closest("ptaf-prism code, ptaf-prism .line, .ptaf-event-raw")) {
+    return true;
+  }
+  const root = typeof el.getRootNode === "function" ? el.getRootNode() : null;
+  const host = root && root.host;
+  if (!host || host.id === DECODE_ID || typeof host.matches !== "function") {
+    return false;
+  }
+  if (host.matches("ptaf-prism") && el.closest("code, .line")) {
+    return true;
+  }
+  return host.id === EVENT_VIEW_ID && Boolean(el.closest(".ptaf-event-raw"));
+}
+
+function selectionRect(range) {
+  const rects = typeof range.getClientRects === "function" ? range.getClientRects() : [];
+  for (let index = rects.length - 1; index >= 0; index -= 1) {
+    const rect = rects[index];
+    if (rect.width === 0 && rect.height === 0) {
+      continue;
+    }
+    if (rect.bottom > 0 && rect.top < window.innerHeight) {
+      return rect;
+    }
+  }
+  if (rects.length) {
+    return rects[rects.length - 1];
+  }
+  return range.getBoundingClientRect();
+}
+
+function selectionRecord(selection) {
+  if (!selection || selection.isCollapsed || !selection.rangeCount) {
+    return null;
+  }
+  if (!nodeInDecodeSource(selection.anchorNode) || !nodeInDecodeSource(selection.focusNode)) {
+    return null;
+  }
+  const text = cleanDecodeText(selection.toString());
+  if (!text) {
+    return null;
+  }
+  return { text, range: selection.getRangeAt(0).cloneRange() };
+}
+
+function pushSelection(list, selection) {
+  if (selection) {
+    list.push(selection);
+  }
+}
+
+function readPageDecodeSelection() {
+  const selections = [];
+  pushSelection(selections, typeof window.getSelection === "function" ? window.getSelection() : null);
+  document.querySelectorAll("ptaf-prism").forEach((node) => {
+    if (node.shadowRoot && typeof node.shadowRoot.getSelection === "function") {
+      try {
+        pushSelection(selections, node.shadowRoot.getSelection());
+      } catch (error) {
+        /* selection is unavailable in this shadow root */
+      }
+    }
+  });
+  const view = document.getElementById(EVENT_VIEW_ID);
+  if (view && view.shadowRoot && typeof view.shadowRoot.getSelection === "function") {
+    try {
+      pushSelection(selections, view.shadowRoot.getSelection());
+    } catch (error) {
+      /* selection is unavailable in the imported event view */
+    }
+  }
+  for (const selection of selections) {
+    const picked = selectionRecord(selection);
+    if (picked) {
+      return picked;
+    }
+  }
+  return null;
+}
+
+function outputSelectionText() {
+  const host = document.getElementById(DECODE_ID);
+  const root = host && host.shadowRoot;
+  if (!root) {
+    return "";
+  }
+  let selection = null;
+  if (typeof root.getSelection === "function") {
+    try {
+      selection = root.getSelection();
+    } catch (error) {
+      selection = null;
+    }
+  }
+  if (!selection || selection.isCollapsed) {
+    const page = typeof window.getSelection === "function" ? window.getSelection() : null;
+    if (page && !page.isCollapsed && page.anchorNode && typeof root.contains === "function" && root.contains(page.anchorNode)) {
+      selection = page;
+    }
+  }
+  if (!selection || selection.isCollapsed) {
+    return "";
+  }
+  const node = selection.anchorNode;
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  if (!el || !el.closest || !el.closest(".ptaf-decode-out")) {
+    return "";
+  }
+  return cleanDecodeText(selection.toString());
+}
+
+function currentDecodeInput() {
+  const fragment = outputSelectionText();
+  if (fragment) {
+    return fragment;
+  }
+  const host = document.getElementById(DECODE_ID);
+  const out = host && host.shadowRoot && host.shadowRoot.querySelector(".ptaf-decode-out");
+  if (out && !out.hidden && out.textContent) {
+    return out.textContent;
+  }
+  return decodeOrigin;
+}
+
+function hideDecodePop() {
+  decodeOrigin = "";
+  decodeRange = null;
+  const host = document.getElementById(DECODE_ID);
+  if (host) {
+    host.remove();
+  }
+}
+
+function placeDecodePop(host, rect) {
+  const margin = 8;
+  const width = host.offsetWidth || 0;
+  const height = host.offsetHeight || 0;
+  let left = rect.left;
+  let top = rect.bottom + margin;
+  const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+  if (left > maxLeft) {
+    left = maxLeft;
+  }
+  if (left < margin) {
+    left = margin;
+  }
+  if (top + height > window.innerHeight - margin) {
+    const above = rect.top - height - margin;
+    top = above >= margin ? above : margin;
+  }
+  host.style.left = `${Math.round(left)}px`;
+  host.style.top = `${Math.round(top)}px`;
+}
+
+function decodeAction(kind, label) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.dataset.decode = kind;
+  button.textContent = label;
+  if (kind === "url") {
+    button.title = "Раскрыть percent-encoding, %XX";
+  } else if (kind === "base64") {
+    button.title = "Декодировать Base64";
+  }
+  return button;
+}
+
+function ensureDecodeHost() {
+  const existing = document.getElementById(DECODE_ID);
+  if (existing && existing.shadowRoot) {
+    return existing;
+  }
+  if (existing) {
+    existing.remove();
+  }
+  const host = document.createElement("div");
+  host.id = DECODE_ID;
+  host.style.cssText = "all:initial;display:block;position:fixed;z-index:2147483647;width:max-content;max-width:min(640px,calc(100vw - 16px));";
+  const theme = typeof attachUi === "function" ? attachUi(host) : null;
+  if (!theme) {
+    host.remove();
+    eventToast("Не удалось открыть декодирование.");
+    return null;
+  }
+  const pop = document.createElement("div");
+  pop.className = "ptaf-decode";
+  pop.setAttribute("role", "dialog");
+  pop.setAttribute("aria-label", "Декодирование выделенного текста");
+  const actions = document.createElement("div");
+  actions.className = "ptaf-decode-actions";
+  actions.append(
+    decodeAction("url", "URL Decode"),
+    decodeAction("base64", "Base64 decode"),
+    decodeAction("copy", "Копировать"),
+    decodeAction("close", "Закрыть")
+  );
+  const copy = actions.querySelector("[data-decode='copy']");
+  copy.hidden = true;
+  const caption = document.createElement("div");
+  caption.className = "ptaf-decode-caption";
+  caption.hidden = true;
+  const out = document.createElement("pre");
+  out.className = "ptaf-decode-out";
+  out.hidden = true;
+  protectPlainNode(out);
+  pop.append(actions, caption, out);
+  pop.addEventListener("mousedown", (event) => {
+    event.stopPropagation();
+    const button = event.target && event.target.closest ? event.target.closest("button") : null;
+    if (!button || event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    const kind = button.dataset.decode;
+    if (kind === "url" || kind === "base64") {
+      runDecode(kind);
+    } else if (kind === "copy") {
+      copyDecodeResult();
+    } else if (kind === "close") {
+      hideDecodePop();
+    }
+  });
+  for (const type of ["mouseup", "pointerdown", "pointerup", "click", "auxclick", "contextmenu", "wheel"]) {
+    pop.addEventListener(type, (event) => event.stopPropagation());
+  }
+  theme.append(pop);
+  return host;
+}
+
+function showDecodePop(picked) {
+  if (picked.text.length > 500000) {
+    eventToast("Выделение слишком длинное.");
+    return;
+  }
+  const same = document.getElementById(DECODE_ID);
+  if (same && picked.text === decodeOrigin) {
+    decodeRange = picked.range;
+    same.style.visibility = "visible";
+    placeDecodePop(same, selectionRect(picked.range));
+    return;
+  }
+  const host = ensureDecodeHost();
+  if (!host) {
+    return;
+  }
+  decodeOrigin = picked.text;
+  decodeRange = picked.range;
+  const caption = host.shadowRoot.querySelector(".ptaf-decode-caption");
+  const out = host.shadowRoot.querySelector(".ptaf-decode-out");
+  const copy = host.shadowRoot.querySelector("[data-decode='copy']");
+  caption.hidden = true;
+  caption.textContent = "";
+  out.hidden = true;
+  setPlainText(out, "");
+  copy.hidden = true;
+  host.style.visibility = "hidden";
+  if (!host.isConnected) {
+    document.body.append(host);
+  }
+  placeDecodePop(host, selectionRect(picked.range));
+  host.style.visibility = "visible";
+  const link = host.shadowRoot.querySelector("link");
+  if (link && !link.sheet) {
+    link.addEventListener("load", () => {
+      if (host.isConnected && decodeRange) {
+        placeDecodePop(host, selectionRect(decodeRange));
+      }
+    }, { once: true });
+  }
+}
+
+function runDecode(kind) {
+  const input = currentDecodeInput();
+  if (!input) {
+    return;
+  }
+  let output = "";
+  try {
+    output = kind === "base64" ? base64DecodeText(input) : urlDecodeText(input);
+  } catch (error) {
+    eventToast((error && error.message) || "Не удалось декодировать.");
+    return;
+  }
+  if (output === input) {
+    eventToast(kind === "base64" ? "Декодирование Base64 не изменило текст." : "В выделенном тексте нет URL-кодирования.");
+    return;
+  }
+  const host = document.getElementById(DECODE_ID);
+  if (!host || !host.shadowRoot) {
+    return;
+  }
+  const caption = host.shadowRoot.querySelector(".ptaf-decode-caption");
+  const out = host.shadowRoot.querySelector(".ptaf-decode-out");
+  const copy = host.shadowRoot.querySelector("[data-decode='copy']");
+  caption.hidden = false;
+  caption.textContent = kind === "base64" ? "Base64 decode" : "URL Decode";
+  setPlainText(out, output);
+  out.hidden = false;
+  copy.hidden = false;
+  if (decodeRange) {
+    const node = decodeRange.commonAncestorContainer;
+    const el = node && (node.nodeType === 1 ? node : node.parentElement);
+    if (el && el.isConnected) {
+      placeDecodePop(host, selectionRect(decodeRange));
+    }
+  }
+}
+
+function copyWithTextarea(text) {
+  const area = document.createElement("textarea");
+  area.value = text;
+  area.setAttribute("readonly", "");
+  area.style.cssText = "position:fixed;left:-9999px;top:0;";
+  document.body.append(area);
+  area.select();
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } catch (error) {
+    ok = false;
+  }
+  area.remove();
+  return ok;
+}
+
+function copyDecodeResult() {
+  const host = document.getElementById(DECODE_ID);
+  const out = host && host.shadowRoot && host.shadowRoot.querySelector(".ptaf-decode-out");
+  const text = out && !out.hidden ? out.textContent : "";
+  if (!text) {
+    return;
+  }
+  const done = (ok) => eventToast(ok ? "Скопировано." : "Не удалось скопировать.");
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(() => done(true)).catch(() => done(copyWithTextarea(text)));
+    return;
+  }
+  done(copyWithTextarea(text));
+}
+
+function selectionInsideDecodePop() {
+  const host = document.getElementById(DECODE_ID);
+  const root = host && host.shadowRoot;
+  if (!root) {
+    return false;
+  }
+  const selections = [];
+  if (typeof root.getSelection === "function") {
+    try {
+      pushSelection(selections, root.getSelection());
+    } catch (error) {
+      /* selection is unavailable in the decode popup */
+    }
+  }
+  pushSelection(selections, typeof window.getSelection === "function" ? window.getSelection() : null);
+  return selections.some((selection) => {
+    if (!selection || selection.isCollapsed || !selection.anchorNode) {
+      return false;
+    }
+    return typeof root.contains === "function" && root.contains(selection.anchorNode);
+  });
+}
+
+function syncDecodeFromSelection() {
+  if (eventStopped || !decodeWatching) {
+    return;
+  }
+  const picked = readPageDecodeSelection();
+  if (picked) {
+    showDecodePop(picked);
+    return;
+  }
+  if (selectionInsideDecodePop()) {
+    return;
+  }
+  if (document.getElementById(DECODE_ID)) {
+    hideDecodePop();
+  }
+}
+
+function eventInDecodePop(event) {
+  if (event.target && event.target.id === DECODE_ID) {
+    return true;
+  }
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  return path.some((node) => node && node.id === DECODE_ID);
+}
+
+function onDecodeMouseDown(event) {
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  if (eventInDecodePop(event)) {
+    decodePointerInSource = false;
+    return;
+  }
+  decodePointerInSource = nodeInDecodeSource(path[0] || event.target);
+  if (!decodePointerInSource && document.getElementById(DECODE_ID)) {
+    hideDecodePop();
+  }
+}
+
+function onDecodePointerUp(event) {
+  if (eventStopped || !decodeWatching) {
+    return;
+  }
+  if (eventInDecodePop(event)) {
+    return;
+  }
+  const startedInside = decodePointerInSource;
+  decodePointerInSource = false;
+  window.setTimeout(() => {
+    if (!decodeWatching || eventStopped) {
+      return;
+    }
+    if (startedInside) {
+      syncDecodeFromSelection();
+      return;
+    }
+    if (document.getElementById(DECODE_ID)) {
+      hideDecodePop();
+    }
+  }, 0);
+}
+
+function onDecodeKeyUp(event) {
+  if (eventStopped || !decodeWatching || event.key === "Escape" || event.key === "Control" || event.key === "Alt" || event.key === "Meta") {
+    return;
+  }
+  const active = document.activeElement;
+  if (active && (active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable)) {
+    return;
+  }
+  window.setTimeout(syncDecodeFromSelection, 0);
+}
+
+function onDecodeKeyDown(event) {
+  if (event.key !== "Escape" || !document.getElementById(DECODE_ID)) {
+    return;
+  }
+  hideDecodePop();
+  event.preventDefault();
+  event.stopPropagation();
+}
+
+function onDecodeScroll(event) {
+  const host = document.getElementById(DECODE_ID);
+  if (!host || !decodeRange) {
+    return;
+  }
+  if (event && eventInDecodePop(event)) {
+    return;
+  }
+  const node = decodeRange.commonAncestorContainer;
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  if (!el || !el.isConnected) {
+    hideDecodePop();
+    return;
+  }
+  const rect = selectionRect(decodeRange);
+  if (!rect || (rect.width === 0 && rect.height === 0) || rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) {
+    host.style.visibility = "hidden";
+    return;
+  }
+  host.style.visibility = "visible";
+  placeDecodePop(host, rect);
+}
+
+function ensureDecodeSelectStyle() {
+  if (document.getElementById(DECODE_STYLE_ID)) {
+    return;
+  }
+  const style = document.createElement("style");
+  style.id = DECODE_STYLE_ID;
+  style.textContent = "ptaf-prism code,ptaf-prism code *,ptaf-prism .line,ptaf-prism .line *{-webkit-user-select:text !important;user-select:text !important;}";
+  (document.head || document.documentElement).append(style);
+}
+
+function watchDecode() {
+  if (decodeWatching || eventStopped) {
+    return;
+  }
+  decodeWatching = true;
+  ensureDecodeSelectStyle();
+  document.addEventListener("copy", onAttackCopy, true);
+  window.addEventListener("mousedown", onDecodeMouseDown, true);
+  document.addEventListener("pointerup", onDecodePointerUp);
+  document.addEventListener("keyup", onDecodeKeyUp);
+  window.addEventListener("keydown", onDecodeKeyDown, true);
+  window.addEventListener("scroll", onDecodeScroll, true);
+  window.addEventListener("resize", onDecodeScroll);
+}
+
+function stopDecode() {
+  decodeWatching = false;
+  document.removeEventListener("copy", onAttackCopy, true);
+  window.removeEventListener("mousedown", onDecodeMouseDown, true);
+  document.removeEventListener("pointerup", onDecodePointerUp);
+  document.removeEventListener("keyup", onDecodeKeyUp);
+  window.removeEventListener("keydown", onDecodeKeyDown, true);
+  window.removeEventListener("scroll", onDecodeScroll, true);
+  window.removeEventListener("resize", onDecodeScroll);
+  hideDecodePop();
+  const style = document.getElementById(DECODE_STYLE_ID);
+  if (style) {
+    style.remove();
+  }
+}
+
 function scheduleEvents() {
   if (eventStopped || eventFrame) {
     return;
@@ -1076,7 +1814,7 @@ function watchEvents() {
   eventObserver = new MutationObserver((mutations) => {
     for (const mutation of mutations) {
       const target = mutation.target.nodeType === 1 ? mutation.target : mutation.target.parentElement;
-      if (target && target.closest && (target.id === EVENT_DOWNLOAD_ID || target.id === EVENT_IMPORT_ID || target.id === EVENT_VIEW_ID || (target.closest && target.closest(`#${EVENT_VIEW_ID}`)))) {
+      if (target && (target.id === DECODE_ID || target.id === DECODE_STYLE_ID || target.id === EVENT_DOWNLOAD_ID || target.id === EVENT_IMPORT_ID || target.id === EVENT_VIEW_ID || (target.closest && target.closest(`#${EVENT_VIEW_ID}, #${DECODE_ID}`)))) {
         continue;
       }
       scheduleEvents();
@@ -1087,6 +1825,7 @@ function watchEvents() {
 }
 
 if (document.body) {
+  watchEventResources();
   watchEvents();
   scheduleEvents();
 }
@@ -1107,15 +1846,29 @@ function applyEventExperimental(enabled) {
   }
   scheduleEvents();
 }
+function applyDecodeSetting(enabled) {
+  if (eventStopped || !enabled) {
+    stopDecode();
+    return;
+  }
+  watchDecode();
+}
 if (chrome.storage && chrome.storage.onChanged) {
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.experimental) {
+    if (area !== "local") {
+      return;
+    }
+    if (changes.experimental) {
       applyEventExperimental(changes.experimental.newValue);
+    }
+    if (changes.selectionDecode) {
+      applyDecodeSetting(changes.selectionDecode.newValue);
     }
   });
 }
 if (chrome.storage && chrome.storage.local) {
-  chrome.storage.local.get({ experimental: false }, (items) => {
+  chrome.storage.local.get({ experimental: false, selectionDecode: false }, (items) => {
     applyEventExperimental(items && items.experimental);
+    applyDecodeSetting(items && items.selectionDecode);
   });
 }
