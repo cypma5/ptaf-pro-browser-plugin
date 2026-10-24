@@ -2234,12 +2234,67 @@ function transferUserRuleTitle() {
   return name;
 }
 
-function transferRuleDownloadSlot() {
-  const header = transferUserRuleHeader();
-  if (!header) {
-    return null;
+function transferIsDownload(node) {
+  return Boolean(node && (node.id === TRANSFER_DOWNLOAD_ID || (node.closest && node.closest(`#${TRANSFER_DOWNLOAD_ID}`))));
+}
+
+function transferHeaderRightLimit(header) {
+  const rect = header.getBoundingClientRect();
+  let limit = rect.right - 8;
+  const host = (header.closest && header.closest("ptaf-form-card-header")) || header;
+  const controls = host.querySelectorAll("button, a, ptaf-button, kbq-button, kbq-icon-button, ptaf-icon-button, [role='button']");
+  for (const control of controls) {
+    if (transferIsDownload(control)) {
+      continue;
+    }
+    const box = control.getBoundingClientRect();
+    if (box.width < 8 || box.height < 8 || box.left < rect.left + rect.width * 0.5) {
+      continue;
+    }
+    if (box.bottom <= rect.top + 2 || box.top >= rect.bottom - 2) {
+      continue;
+    }
+    const edge = box.left - 8;
+    if (edge < limit) {
+      limit = edge;
+    }
   }
-  return { slot: header, before: null, header: true };
+  return limit;
+}
+
+function transferOverlayZ(header) {
+  let z = 30;
+  let node = header;
+  while (node && node !== document.documentElement) {
+    const value = Number.parseInt(getComputedStyle(node).zIndex, 10);
+    if (Number.isFinite(value)) {
+      z = Math.max(z, value + 1);
+    }
+    node = node.parentElement;
+  }
+  return Math.min(z, 2147483000);
+}
+
+function transferMoveDownload(button, header) {
+  const rect = header.getBoundingClientRect();
+  const hidden = rect.width < 40 || rect.bottom < 0 || rect.top > window.innerHeight;
+  button.style.visibility = hidden ? "hidden" : "visible";
+  if (hidden) {
+    return;
+  }
+  const limit = transferHeaderRightLimit(header);
+  const width = Math.round(Math.min(320, Math.max(140, Math.min(rect.width * 0.42, limit - rect.left - 16))));
+  button.style.position = "fixed";
+  button.style.zIndex = String(transferOverlayZ(header));
+  button.style.margin = "0";
+  button.style.width = `${width}px`;
+  button.style.maxWidth = `${width}px`;
+  button.style.height = "24px";
+  button.style.overflow = "hidden";
+  button.style.textOverflow = "ellipsis";
+  button.style.top = `${Math.round(rect.top + Math.max(0, (rect.height - 24) / 2))}px`;
+  button.style.left = `${Math.round(limit - width)}px`;
+  button.style.right = "auto";
 }
 
 function transferBindDownload(button) {
@@ -2256,44 +2311,28 @@ function transferBindDownload(button) {
 }
 
 function transferPlaceRuleDownload() {
-  const place = transferRuleDownloadSlot();
+  const header = transferUserRuleHeader();
   const existing = document.getElementById(TRANSFER_DOWNLOAD_ID);
-  if (!place) {
+  if (!header) {
     if (existing) {
       existing.remove();
     }
     return;
   }
-  const sameFlow = !place.fixed && existing && existing.dataset.fixed !== "1" && existing.parentElement === place.slot && existing.nextElementSibling === place.before;
-  const sameFixed = place.fixed && existing && existing.dataset.fixed === "1";
-  if (sameFlow || sameFixed) {
-    if (existing.textContent !== TRANSFER_DOWNLOAD_LABEL) {
-      existing.textContent = TRANSFER_DOWNLOAD_LABEL;
+  let button = existing;
+  if (!button || button.parentElement !== document.body) {
+    if (button) {
+      button.remove();
     }
-    return;
+    button = transferPlainButton(TRANSFER_DOWNLOAD_LABEL);
+    button.id = TRANSFER_DOWNLOAD_ID;
+    button.dataset.fixed = "1";
+    transferBindDownload(button);
+    document.body.append(button);
+  } else if (button.textContent !== TRANSFER_DOWNLOAD_LABEL) {
+    button.textContent = TRANSFER_DOWNLOAD_LABEL;
   }
-  if (existing) {
-    existing.remove();
-  }
-  const button = transferPlainButton(TRANSFER_DOWNLOAD_LABEL);
-  button.id = TRANSFER_DOWNLOAD_ID;
-  transferBindDownload(button);
-  if (place.header) {
-    const display = getComputedStyle(place.slot).display;
-    if (display !== "flex" && display !== "inline-flex") {
-      place.slot.style.display = "flex";
-      place.slot.style.alignItems = "center";
-    }
-    button.style.height = "24px";
-    button.style.margin = "0 0 0 auto";
-    place.slot.append(button);
-    return;
-  }
-  if (place.before && place.before.parentElement === place.slot) {
-    place.slot.insertBefore(button, place.before);
-  } else {
-    place.slot.prepend(button);
-  }
+  transferMoveDownload(button, header);
 }
 
 function transferClearUserRules() {
@@ -2365,6 +2404,8 @@ function transferHookHistory() {
     };
   }
   window.addEventListener("popstate", transferSchedule);
+  window.addEventListener("resize", transferSchedule);
+  window.addEventListener("scroll", transferSchedule, true);
 }
 
 function transferWatch() {

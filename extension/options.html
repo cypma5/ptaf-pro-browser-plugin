@@ -33,6 +33,9 @@
         margin: 8px 0 0 24px;
         color: gray;
       }
+      p + label {
+        margin-top: 16px;
+      }
     </style>
   </head>
   <body>
@@ -42,6 +45,11 @@
       <span>Экспериментальные функции</span>
     </label>
     <p>Включает экспериментальные функции: сравнение политики и шаблона на странице правила, пункт traffic_settings в меню пользователя и импорт события безопасности на странице событий. Пока галка снята, они не показываются.</p>
+    <label>
+      <input id="selection-decode" type="checkbox">
+      <span>Декодирование выделенного текста</span>
+    </label>
+    <p>В сыром запросе и сыром ответе у выделения появляются URL Decode и Base64 decode. Пока галка снята, они не показываются.</p>
     <script src="options.js"></script>
   </body>
 </html>

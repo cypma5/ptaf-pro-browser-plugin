@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "PT AF PRO Browser Extension",
-  "version": "1.0.84",
+  "version": "1.0.115",
   "description": "Add or remove actions on open PT Application Firewall rules. Export and import rules and security events as JSON.",
   "icons": {
     "16": "icons/icon-16.png",
@@ -28,13 +28,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["content/events-hook.js"],
-      "run_at": "document_start",
-      "world": "MAIN"
-    },
-    {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content/content.js", "content/dashboard.js", "content/compare.js", "content/traffic.js", "content/x509.js", "content/certificates.js", "content/transfer.js", "content/events.js"],
+      "js": ["content/content.js", "content/dashboard-overview.js", "content/dashboard-events.js", "content/dashboard-matches.js", "content/dashboard.js", "content/compare.js", "content/traffic.js", "content/x509.js", "content/certificates.js", "content/policies.js", "content/transfer.js", "content/events.js"],
       "run_at": "document_idle"
     }
   ],
