@@ -14,11 +14,16 @@
         margin: 0;
         padding: 24px;
         min-width: 320px;
+        max-width: 640px;
       }
       h1 {
-        margin: 0 0 16px;
+        margin: 0 0 8px;
         font-size: 16px;
         line-height: 24px;
+      }
+      .lead {
+        margin: 0 0 16px;
+        color: gray;
       }
       label {
         display: flex;
@@ -40,11 +45,62 @@
   </head>
   <body>
     <h1>PT AF PRO Browser Extension</h1>
+    <p class="lead">Каждая функция включается отдельно. Снятие галки убирает её с открытой вкладки.</p>
     <label>
-      <input id="experimental" type="checkbox">
-      <span>Экспериментальные функции</span>
+      <input id="bulk-actions" type="checkbox">
+      <span>Действия для правил</span>
     </label>
-    <p>Включает экспериментальные функции: сравнение политики и шаблона на странице правила, пункт traffic_settings в меню пользователя и импорт события безопасности на странице событий. Пока галка снята, они не показываются.</p>
+    <p>Кнопка на странице правил: добавить или снять действие, заменить его, выбрать правила.</p>
+    <label>
+      <input id="rule-transfer" type="checkbox">
+      <span>Выгрузка и загрузка правила</span>
+    </label>
+    <p>Сохраняет правило в JSON и загружает его обратно, сопоставляя действия и списки с этой инсталляцией.</p>
+    <label>
+      <input id="dashboard" type="checkbox">
+      <span>Дашборд</span>
+    </label>
+    <p>Вкладка в верхнем меню: цепочка прослушивания и обзор событий и трафика.</p>
+    <label>
+      <input id="policy-list" type="checkbox">
+      <span>Список политик на схеме</span>
+    </label>
+    <p>На схеме конфигурации у шаблона показывает, включён ли набор и сколько правил доступно. У веб-приложения — на каком шаблоне основана политика.</p>
+    <label>
+      <input id="user-rule-set" type="checkbox">
+      <span>Набор пользовательских правил</span>
+    </label>
+    <p>В блоке набора на схеме показывает список правил: критичность, тип и действия. Те же сведения добавляет в строки открытого списка правил.</p>
+    <label>
+      <input id="certificates" type="checkbox">
+      <span>Срок действия сертификата</span>
+    </label>
+    <p>Подсвечивает сертификат, до окончания которого осталось меньше 30 дней, и разбирает цепочку.</p>
+    <label>
+      <input id="event-download" type="checkbox">
+      <span>Скачать событие JSON</span>
+    </label>
+    <p>Кнопка в карточке события сохраняет все поля и сырой запрос.</p>
+    <label>
+      <input id="event-import" type="checkbox">
+      <span>Импорт события безопасности</span>
+    </label>
+    <p>На странице событий появляется Импорт JSON. Пока галка снята, кнопки нет.</p>
+    <label>
+      <input id="compare-rules" type="checkbox">
+      <span>Сравнение политики и шаблона</span>
+    </label>
+    <p>На странице правила сравнивает политику с шаблоном. Пока галка снята, сравнение не показывается.</p>
+    <label>
+      <input id="traffic-settings" type="checkbox">
+      <span>traffic_settings</span>
+    </label>
+    <p>Пункт в меню пользователя. Пока галка снята, пункта нет.</p>
+    <label>
+      <input id="filter-bar" type="checkbox">
+      <span>Графический фильтр событий</span>
+    </label>
+    <p>На странице событий появляется переключатель «Текстовый фильтр» и «Графический фильтр». Пока галка снята, переключатель не показывается.</p>
     <label>
       <input id="selection-decode" type="checkbox">
       <span>Декодирование выделенного текста</span>

@@ -1,21 +1,13 @@
-const DASH_MX_PRESETS = [
-  { id: "hour", label: "Последний час", seconds: 3600 },
-  { id: "day", label: "Последние 24 часа", seconds: 86400 },
-  { id: "threeDays", label: "Последние 3 дня", seconds: 259200 },
-  { id: "week", label: "Последняя неделя", seconds: 604800 },
-  { id: "month", label: "Последние 30 дней", seconds: 2592000 },
-];
 
 const DASH_MX_COLORS = ["#5b8def", "#e06ca8", "#3dbe8c", "#e0a045", "#8b7cf7"];
 
-let dashMxPreset = "day";
+let dashMxPreset = "1d";
+let dashMxCustom = null;
 let dashMxRule = "";
 let dashMxName = "";
 let dashMxFilter = null;
 let dashMxPattern = "";
 let dashMxPlace = null;
-let dashMxSkipShown = false;
-let dashMxSkipTarget = "policy";
 let dashMxBusy = false;
 let dashMxToken = 0;
 let dashMxActive = false;
@@ -23,9 +15,7 @@ let dashMxCache = { rows: [], read: 0, truncated: false, error: "" };
 let dashMxResize = null;
 
 function dashMxRange() {
-  const preset = DASH_MX_PRESETS.find((item) => item.id === dashMxPreset) || DASH_MX_PRESETS[1];
-  const end = Math.floor(Date.now() / 1000);
-  return { start: end - preset.seconds, end };
+  return dashTimeRange(dashMxPreset, dashMxCustom);
 }
 
 function dashMxNameOf(match) {
@@ -60,7 +50,6 @@ function dashMxRows(items) {
         source: match && match.matched_name ? String(match.matched_name) : "",
         param: match && match.matched_key ? String(match.matched_key) : "",
         value,
-        eventId: item.id ? String(item.id) : "",
       });
     });
   });
@@ -116,14 +105,7 @@ function dashMxTree(rows, appName) {
     const names = rules.get(row.rule);
     if (!names.has(row.name)) {
       const place = dashMxSource(row);
-      names.set(row.name, {
-        source: place.source,
-        param: place.param,
-        eventId: row.eventId || "",
-        counts: new Map(),
-      });
-    } else if (row.eventId && !names.get(row.name).eventId) {
-      names.get(row.name).eventId = row.eventId;
+      names.set(row.name, { source: place.source, param: place.param, counts: new Map() });
     }
     const bucket = names.get(row.name);
     bucket.counts.set(row.value, (bucket.counts.get(row.value) || 0) + 1);
@@ -138,7 +120,6 @@ function dashMxTree(rows, appName) {
           name,
           source: bucket.source,
           param: bucket.param,
-          eventId: bucket.eventId || "",
           count: list.reduce((sum, item) => sum + item.count, 0),
           values: list,
         };
@@ -426,72 +407,6 @@ async function dashMxWriteSkip(target) {
   return `Записано: ${located.where}. ${built.title}${detailText}`;
 }
 
-function dashMxSkipRows(item) {
-  const conditions = item && item.conditions && typeof item.conditions === "object" ? item.conditions : {};
-  const rows = [];
-  if (conditions.if_key) {
-    rows.push(["Ключ", String(conditions.if_key)]);
-  }
-  if (conditions.if_path) {
-    rows.push(["Путь", String(conditions.if_path)]);
-  }
-  if (conditions.if_filename) {
-    rows.push(["Имя файла", String(conditions.if_filename)]);
-  }
-  if (conditions.if_value != null && String(conditions.if_value) !== "") {
-    rows.push(["Значение", String(conditions.if_value)]);
-  }
-  return rows;
-}
-
-function dashMxRenderRuleSkip(host, detail) {
-  host.replaceChildren();
-  const title = document.createElement("h3");
-  title.textContent = "Пропускаемые части";
-  const where = document.createElement("p");
-  where.className = "ptaf-mx-note";
-  where.textContent = detail.where;
-  host.append(title, where);
-  const list = Array.isArray(detail.skip) ? detail.skip : [];
-  if (!list.length) {
-    const empty = document.createElement("p");
-    empty.className = "ptaf-mx-note";
-    empty.textContent = "Пропускаемых частей нет";
-    host.append(empty);
-    return;
-  }
-  list.forEach((item) => {
-    const card = document.createElement("article");
-    card.className = "ptaf-mx-skip-card";
-    const heading = document.createElement("h4");
-    heading.textContent = dashMxSkipTitle(item.source, item.skip);
-    card.append(heading);
-    dashMxSkipRows(item).forEach(([label, value]) => {
-      const row = document.createElement("p");
-      const name = document.createElement("span");
-      name.textContent = label;
-      const text = document.createElement("b");
-      text.textContent = value;
-      row.append(name, text);
-      card.append(row);
-    });
-    host.append(card);
-  });
-}
-
-async function dashMxShowRuleSkip(host, place, target) {
-  host.hidden = false;
-  host.replaceChildren();
-  const loading = document.createElement("p");
-  loading.className = "ptaf-mx-note";
-  loading.textContent = "Читаем пропускаемые части…";
-  host.append(loading);
-  const located = await dashMxRuleDetail(target || "policy", place.app, place.rule);
-  const detail = await api(located.path);
-  const skip = detail && detail.variables && Array.isArray(detail.variables.skip) ? detail.variables.skip : [];
-  dashMxRenderRuleSkip(host, { where: located.where, skip });
-}
-
 function dashMxSameFilter(next) {
   const filter = dashMxFilter;
   return Boolean(filter)
@@ -732,26 +647,27 @@ function dashMxPaint(theme) {
   root.replaceChildren();
   const toolbar = document.createElement("div");
   toolbar.className = "ptaf-mx-toolbar";
-  const periodLabel = document.createElement("label");
-  periodLabel.append(document.createTextNode("Период "));
-  const period = document.createElement("select");
-  period.className = "ptaf-mx-period";
-  DASH_MX_PRESETS.forEach((preset) => {
-    const option = document.createElement("option");
-    option.value = preset.id;
-    option.textContent = preset.label;
-    option.selected = preset.id === dashMxPreset;
-    period.append(option);
-  });
-  period.addEventListener("change", () => {
-    dashMxPreset = period.value;
+  const periodHost = document.createElement("div");
+  const timeRange = dashMountTimeChoice(periodHost, root, {
+    get preset() {
+      return dashMxPreset;
+    },
+    set preset(value) {
+      dashMxPreset = value;
+    },
+    get custom() {
+      return dashMxCustom;
+    },
+    set custom(value) {
+      dashMxCustom = value;
+    },
+  }, () => {
     dashMxFilter = null;
     dashMxRule = "";
     dashMxName = "";
     dashMatchLoad(theme);
   });
-  periodLabel.append(period);
-  toolbar.append(periodLabel);
+  toolbar.append(periodHost);
 
   const apps = dashMxApps(dashMxCache.rows || []);
   const note = document.createElement("p");
@@ -764,7 +680,7 @@ function dashMxPaint(theme) {
   if (note.textContent) {
     toolbar.append(note);
   }
-  root.append(toolbar);
+  root.append(toolbar, timeRange);
 
   const status = document.createElement("p");
   status.className = "ptaf-mx-empty";
@@ -851,7 +767,6 @@ function dashMxPaint(theme) {
             source: item.source,
             param: item.param,
             name: item.name,
-            eventId: item.eventId || "",
           };
         }
         bind(card, { level: "name", app: application.name, rule: rule.rule, name: item.name });
@@ -905,9 +820,6 @@ function dashMxPaint(theme) {
   const choices = document.createElement("div");
   choices.className = "ptaf-mx-skip-choices";
   choices.hidden = true;
-  const skipList = document.createElement("div");
-  skipList.className = "ptaf-mx-rule-skip";
-  skipList.hidden = true;
   const skipStatus = document.createElement("p");
   skipStatus.className = "ptaf-mx-pattern-error";
   skipStatus.hidden = true;
@@ -926,46 +838,45 @@ function dashMxPaint(theme) {
       }
       dashMxBusy = true;
       setSkipStatus("Записываем пропускаемую часть…", false);
-      let written = "";
       try {
-        written = await dashMxWriteSkip(target);
-        setSkipStatus(written, false);
-        dashMxSkipShown = true;
-        dashMxSkipTarget = target;
-        layout.classList.add("is-skip");
-        await dashMxShowRuleSkip(skipList, dashMxPlace, target);
+        setSkipStatus(await dashMxWriteSkip(target), false);
+        choices.hidden = true;
       } catch (error) {
-        const message = error && error.message ? error.message : "Не удалось записать";
-        setSkipStatus(written ? `${written}. ${message}` : message, true);
+        setSkipStatus(error && error.message ? error.message : "Не удалось записать", true);
       }
       dashMxBusy = false;
     });
     return button;
   };
-  choices.hidden = false;
   choices.append(choice("В правило политики", "policy"), choice("В шаблон", "template"));
-  create.addEventListener("click", async () => {
-    if (dashMxBusy) {
-      return;
-    }
+  create.addEventListener("click", () => {
     if (!dashMxPlace) {
       setSkipStatus("Выберите Matched name", true);
+      choices.hidden = true;
       return;
     }
-    dashMxBusy = true;
-    setSkipStatus("Читаем пропускаемые части…", false);
-    try {
-      dashMxSkipShown = true;
-      dashMxSkipTarget = "policy";
-      layout.classList.add("is-skip");
-      await dashMxShowRuleSkip(skipList, dashMxPlace, "policy");
-      setSkipStatus("", false);
-    } catch (error) {
-      setSkipStatus(error && error.message ? error.message : "Не удалось прочитать пропускаемые части", true);
+    if (!dashMxPattern.trim()) {
+      setSkipStatus("Введите регулярное выражение", true);
+      choices.hidden = true;
+      return;
     }
-    dashMxBusy = false;
+    const decoded = dashMxPlace.param && String(dashMxPlace.param).startsWith("http.")
+      ? dashMxDecode(dashMxPlace.param)
+      : null;
+    if (decoded && decoded.error) {
+      setSkipStatus(decoded.error, true);
+      choices.hidden = true;
+      return;
+    }
+    const hint = decoded
+      ? `Путь ${decoded.path}. Пропускать ${DASH_MX_SKIP_LABELS[decoded.skip] || decoded.skip}. `
+      : dashMxPlace.param
+        ? `Ключ ${dashMxPlace.param}. Пропускать значение. `
+        : "Пропускать значение. ";
+    setSkipStatus(`${hint}Значение — выражение из поля PCRE.`, false);
+    choices.hidden = !choices.hidden;
   });
-  skipBox.append(create, choices, skipStatus, skipList);
+  skipBox.append(create, choices, skipStatus);
   valuesColumn.append(valuesTitle, patternLabel, patternError, skipBox, valuesBody);
   patternError.textContent = dashMxValues(valuesBody, chosen ? chosen.values : []);
   pattern.classList.toggle("is-bad", Boolean(patternError.textContent));
@@ -994,12 +905,6 @@ function dashMxPaint(theme) {
     dashMxResize.observe(board);
   }
   dashMxSyncChrome(theme);
-  if (dashMxSkipShown && dashMxPlace) {
-    layout.classList.add("is-skip");
-    dashMxShowRuleSkip(skipList, dashMxPlace, dashMxSkipTarget).catch((error) => {
-      setSkipStatus(error && error.message ? error.message : "Не удалось прочитать пропускаемые части", true);
-    });
-  }
 }
 
 async function dashMatchLoad(theme) {

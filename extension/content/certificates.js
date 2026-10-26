@@ -31,6 +31,7 @@ let certLoading = null;
 let certFrame = 0;
 let certObserver = null;
 let certStopped = false;
+let certEnabled = true;
 const certBoundInputs = new Set();
 
 function certContextAlive() {
@@ -555,7 +556,20 @@ function scheduleCertificates() {
   });
 }
 
+function hideCertificates() {
+  document.querySelectorAll("[data-ptaf-cert-expiry]").forEach((node) => {
+    node.style.removeProperty("color");
+    node.style.removeProperty("font-weight");
+    delete node.dataset.ptafCertExpiry;
+  });
+  document.querySelectorAll(".ptaf-cert-attrs, #ptaf-cert-attrs-style").forEach((node) => node.remove());
+}
+
 async function syncCertificates() {
+  if (!certEnabled) {
+    hideCertificates();
+    return;
+  }
   if (certStopped || !certContextAlive()) {
     stopCertificates();
     return;
@@ -596,5 +610,15 @@ function watchCertificates() {
   certObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 
+if (typeof pluginSetting === "function") {
+  pluginSetting("certificates", true, (enabled) => {
+    certEnabled = enabled;
+    if (enabled) {
+      scheduleCertificates();
+    } else {
+      hideCertificates();
+    }
+  });
+}
 watchCertificates();
 scheduleCertificates();

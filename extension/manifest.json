@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "PT AF PRO Browser Extension",
-  "version": "1.0.115",
-  "description": "Add or remove actions on open PT Application Firewall rules. Export and import rules and security events as JSON.",
+  "version": "1.0.123",
+  "description": "Add or remove actions on open PT Application Firewall rules. Export and import rules and security events as JSON. Build security-event filters in a filter bar.",
   "icons": {
     "16": "icons/icon-16.png",
     "48": "icons/icon-48.png",
@@ -28,14 +28,14 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["content/content.js", "content/dashboard-overview.js", "content/dashboard-events.js", "content/dashboard-matches.js", "content/dashboard.js", "content/compare.js", "content/traffic.js", "content/x509.js", "content/certificates.js", "content/policies.js", "content/transfer.js", "content/events.js"],
+      "js": ["content/content.js", "content/dashboard-overview.js", "content/dashboard-events.js", "content/dashboard-matches.js", "content/dashboard.js", "content/compare.js", "content/traffic.js", "content/x509.js", "content/certificates.js", "content/policies.js", "content/rule-select.js", "content/transfer.js", "content/filter-bar.js", "content/events.js"],
       "run_at": "document_idle"
     }
   ],
   "host_permissions": ["http://*/*", "https://*/*"],
   "web_accessible_resources": [
     {
-      "resources": ["content/content.css"],
+      "resources": ["content/content.css", "content/filter-bar-page.js"],
       "matches": ["http://*/*", "https://*/*"]
     }
   ]

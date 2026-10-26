@@ -2346,8 +2346,10 @@ function transferClearUserRules() {
   });
 }
 
+let transferEnabled = true;
+
 function transferPlaceBar() {
-  if (typeof stylesheetUrl === "function" && !stylesheetUrl()) {
+  if (!transferEnabled || (typeof stylesheetUrl === "function" && !stylesheetUrl())) {
     const stale = document.getElementById(TRANSFER_BAR_ID);
     if (stale) {
       stale.remove();
@@ -2422,6 +2424,15 @@ function transferWatch() {
   }
 }
 
+if (typeof pluginSetting === "function") {
+  pluginSetting("ruleTransfer", true, (enabled) => {
+    transferEnabled = enabled;
+    if (!enabled) {
+      transferCloseDialog();
+    }
+    transferSchedule();
+  });
+}
 transferPath = transferRoute();
 transferHookHistory();
 document.addEventListener("keydown", transferOnKey);

@@ -1,11 +1,3 @@
-const DASH_OV_PRESETS = [
-  { id: "hour", label: "Последний час", seconds: 3600 },
-  { id: "day", label: "Последние 24 часа", seconds: 86400 },
-  { id: "threeDays", label: "Последние 3 дня", seconds: 259200 },
-  { id: "week", label: "Последняя неделя", seconds: 604800 },
-  { id: "month", label: "Последние 30 дней", seconds: 2592000 },
-];
-
 const DASH_OV_SEVERITY = [
   { id: "", label: "Все" },
   { id: "none", label: "Нет" },
@@ -28,7 +20,8 @@ const DASH_OV_CLASS = {
   info: { label: "Инфо", color: "#8d93a8" },
 };
 
-let dashOvPreset = "day";
+let dashOvPreset = "1d";
+let dashOvCustom = null;
 let dashOvApps = [];
 let dashOvSelected = new Set();
 let dashOvSeverity = "";
@@ -46,9 +39,7 @@ function dashOvZone() {
 }
 
 function dashOvRange() {
-  const preset = DASH_OV_PRESETS.find((item) => item.id === dashOvPreset) || DASH_OV_PRESETS[1];
-  const end = Math.floor(Date.now() / 1000);
-  return { start: end - preset.seconds, end };
+  return dashTimeRange(dashOvPreset, dashOvCustom);
 }
 
 function dashOvAppFilter() {
@@ -482,7 +473,7 @@ function dashOverviewEnsure(theme) {
   root.dataset.ready = "1";
   root.innerHTML = [
     '<div class="ptaf-ov-toolbar">',
-    '  <label>Период <select class="ptaf-ov-period"></select></label>',
+    '  <div class="ptaf-ov-time"></div>',
     '  <div class="ptaf-ov-apps">',
     '    <button type="button" class="ptaf-ov-apps-button">Приложения</button>',
     '    <div class="ptaf-ov-apps-menu" hidden></div>',
@@ -498,18 +489,23 @@ function dashOverviewEnsure(theme) {
     '<div class="ptaf-ov-bottom"></div>',
     '<div class="ptaf-ov-attack"></div>',
   ].join("");
-  const period = root.querySelector(".ptaf-ov-period");
-  DASH_OV_PRESETS.forEach((preset) => {
-    const option = document.createElement("option");
-    option.value = preset.id;
-    option.textContent = preset.label;
-    option.selected = preset.id === dashOvPreset;
-    period.append(option);
-  });
-  period.addEventListener("change", () => {
-    dashOvPreset = period.value;
+  const timeRange = dashMountTimeChoice(root.querySelector(".ptaf-ov-time"), root, {
+    get preset() {
+      return dashOvPreset;
+    },
+    set preset(value) {
+      dashOvPreset = value;
+    },
+    get custom() {
+      return dashOvCustom;
+    },
+    set custom(value) {
+      dashOvCustom = value;
+    },
+  }, () => {
     dashOverviewLoad(theme);
   });
+  root.append(timeRange);
   const appsButton = root.querySelector(".ptaf-ov-apps-button");
   const appsMenu = root.querySelector(".ptaf-ov-apps-menu");
   appsButton.addEventListener("click", () => {

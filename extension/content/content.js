@@ -22,12 +22,50 @@ const rulePicker = {
   loading: false,
 };
 let syncFrame = 0;
+let bulkEnabled = true;
 let returnFocus = null;
 let domObserver = null;
 let themeObserver = null;
 let extensionStopped = false;
 let detectedTheme = null;
 let pluginUserAgentReady = null;
+
+function pluginSetting(key, fallback, apply) {
+  const resolve = (items) => {
+    if (items && Object.prototype.hasOwnProperty.call(items, key)) {
+      return Boolean(items[key]);
+    }
+    if (fallback === "experimental") {
+      return Boolean(items && items.experimental);
+    }
+    return Boolean(fallback);
+  };
+  if (!chrome.storage || !chrome.storage.local) {
+    apply(fallback === "experimental" ? false : Boolean(fallback));
+    return;
+  }
+  chrome.storage.local.get(["experimental", key], (items) => {
+    apply(resolve(items || {}));
+  });
+  if (chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") {
+        return;
+      }
+      if (changes[key]) {
+        apply(Boolean(changes[key].newValue));
+        return;
+      }
+      if (fallback === "experimental" && changes.experimental) {
+        chrome.storage.local.get([key], (current) => {
+          if (!current || !Object.prototype.hasOwnProperty.call(current, key)) {
+            apply(Boolean(changes.experimental.newValue));
+          }
+        });
+      }
+    });
+  }
+}
 
 function pluginUrl(url) {
   const value = String(url);
@@ -150,7 +188,7 @@ function surfaceLuminance() {
       return direct;
     }
   }
-  const skip = new Set([BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-traffic-open", "ptaf-traffic-dialog", "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-dash-view", "ptaf-dash-submenu"]);
+  const skip = new Set([BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-traffic-open", "ptaf-traffic-dialog", "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-dash-view", "ptaf-dash-submenu", "ptaf-rule-select-bar", "ptaf-rule-select-dialog", "ptaf-filter-bar"]);
   let node = document.elementFromPoint(
     Math.max(0, Math.floor(window.innerWidth / 2)),
     Math.max(0, Math.floor(window.innerHeight / 2))
@@ -185,7 +223,7 @@ function pageTheme() {
 
 function syncTheme() {
   const theme = pageTheme();
-  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-dash-view", "ptaf-dash-submenu"]) {
+  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-dash-view", "ptaf-dash-submenu", "ptaf-rule-select-bar", "ptaf-rule-select-dialog", "ptaf-filter-bar"]) {
     const node = document.getElementById(id);
     const root = node && node.shadowRoot && node.shadowRoot.querySelector(".ptaf-theme");
     if (root) {
@@ -216,7 +254,13 @@ function stopExtension() {
   if (typeof stopDecode === "function") {
     stopDecode();
   }
-  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-decode-style", "ptaf-dash-view", "ptaf-dash-submenu"]) {
+  if (typeof stopRuleSelect === "function") {
+    stopRuleSelect();
+  }
+  if (typeof stopFilterBar === "function") {
+    stopFilterBar();
+  }
+  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-decode-style", "ptaf-dash-view", "ptaf-dash-submenu", "ptaf-rule-select-bar", "ptaf-rule-select-dialog", "ptaf-filter-bar"]) {
     const node = document.getElementById(id);
     if (node) {
       node.remove();
@@ -2100,6 +2144,14 @@ function syncButton() {
     stopExtension();
     return;
   }
+  if (!bulkEnabled) {
+    const hidden = document.getElementById(BUTTON_ID);
+    if (hidden) {
+      hidden.remove();
+    }
+    closeDialog();
+    return;
+  }
   syncTheme();
   const target = parseTarget(location.pathname);
   const host = document.querySelector(".top-panel .rules-actions");
@@ -2203,6 +2255,10 @@ function watchDom() {
   domObserver.observe(document.body, { childList: true, subtree: true });
 }
 
+pluginSetting("bulkActions", true, (enabled) => {
+  bulkEnabled = enabled;
+  scheduleSync();
+});
 hookHistory();
 document.addEventListener("keydown", onKeyDown);
 watchDom();
