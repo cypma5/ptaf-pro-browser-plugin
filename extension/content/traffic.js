@@ -836,20 +836,11 @@ function applyTrafficExperimental(enabled) {
 }
 
 function readTrafficExperimental() {
-  if (!chrome.storage || !chrome.storage.local) {
+  if (typeof pluginSetting !== "function") {
     applyTrafficExperimental(false);
     return;
   }
-  chrome.storage.local.get({ experimental: false }, (items) => {
-    applyTrafficExperimental(items && items.experimental);
-  });
+  pluginSetting("trafficSettings", "experimental", applyTrafficExperimental);
 }
 
-if (chrome.storage && chrome.storage.onChanged) {
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.experimental) {
-      applyTrafficExperimental(changes.experimental.newValue);
-    }
-  });
-}
 readTrafficExperimental();

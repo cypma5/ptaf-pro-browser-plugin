@@ -25,6 +25,8 @@ let policyRulesLoading = null;
 let policyFrame = 0;
 let policyObserver = null;
 let policyStopped = false;
+let policyEnabled = true;
+let userRulesEnabled = true;
 
 function policyAlive() {
   try {
@@ -445,7 +447,7 @@ function paintRuleCatalog(groups, copy, english) {
     }
     row.querySelectorAll(":scope > .ptaf-rule-bar, :scope > .ptaf-rule-extra").forEach((node) => node.remove());
     row.dataset.ptafRule = signature;
-    row.insertBefore(policyRuleBar(rule, english), row.firstChild);
+    row.insertBefore(policyRuleBar(rule, english), nameNode);
     const extra = policyRuleExtra(rule, copy, english);
     const actions = row.querySelector(":scope > .actions");
     if (actions) {
@@ -456,18 +458,44 @@ function paintRuleCatalog(groups, copy, english) {
   });
 }
 
+function hidePolicyFacts() {
+  document.querySelectorAll(".ptaf-policy-meta, .ptaf-policy-base").forEach((node) => node.remove());
+}
+
+function hideUserRules() {
+  document.querySelectorAll(".ptaf-rule-list, .ptaf-rule-bar, .ptaf-rule-extra").forEach((node) => node.remove());
+  document.querySelectorAll("[data-ptaf-rule]").forEach((row) => {
+    delete row.dataset.ptafRule;
+  });
+}
+
+function hidePolicyStyle() {
+  if (policyEnabled || userRulesEnabled) {
+    return;
+  }
+  const style = document.getElementById("ptaf-policy-style");
+  if (style) {
+    style.remove();
+  }
+}
+
 function paintPolicies() {
-  if (policyFacts) {
+  if (policyEnabled && policyFacts) {
     policyStyle();
     const copy = policyCopy(policyEnglish());
     paintPolicyTemplates(policyFacts, copy);
     paintPolicyApplications(policyFacts, copy);
+  } else if (!policyEnabled) {
+    hidePolicyFacts();
   }
-  if (policyRules) {
+  if (userRulesEnabled && policyRules) {
     policyStyle();
     const english = policyEnglish();
     paintRuleCatalog(policyRules, policyCopy(english), english);
+  } else if (!userRulesEnabled) {
+    hideUserRules();
   }
+  hidePolicyStyle();
 }
 
 function schedulePolicies() {
@@ -481,6 +509,12 @@ function schedulePolicies() {
 }
 
 async function syncPolicies() {
+  if (!policyEnabled && !userRulesEnabled) {
+    hidePolicyFacts();
+    hideUserRules();
+    hidePolicyStyle();
+    return;
+  }
   if (policyStopped || !policyAlive()) {
     stopPolicies();
     return;
@@ -488,9 +522,16 @@ async function syncPolicies() {
   if (typeof api !== "function") {
     return;
   }
-  const wantsFacts = document.querySelector(`${POLICY_TEMPLATE_NODE}, ${POLICY_APP_NODE}`);
-  const wantsRules = document.querySelector(`${POLICY_RULES_NODE}, .all-rules`);
+  const wantsFacts = policyEnabled && document.querySelector(`${POLICY_TEMPLATE_NODE}, ${POLICY_APP_NODE}`);
+  const wantsRules = userRulesEnabled && document.querySelector(`${POLICY_RULES_NODE}, .all-rules`);
   if (!wantsFacts && !wantsRules) {
+    if (!policyEnabled) {
+      hidePolicyFacts();
+    }
+    if (!userRulesEnabled) {
+      hideUserRules();
+    }
+    hidePolicyStyle();
     return;
   }
   if (wantsFacts && !(policyFailedAt && Date.now() - policyFailedAt < 15000)) {
@@ -531,5 +572,23 @@ function watchPolicies() {
   policyObserver.observe(document.body, { childList: true, subtree: true, characterData: true });
 }
 
+if (typeof pluginSetting === "function") {
+  pluginSetting("policyList", true, (enabled) => {
+    policyEnabled = enabled;
+    if (!enabled) {
+      hidePolicyFacts();
+      hidePolicyStyle();
+    }
+    schedulePolicies();
+  });
+  pluginSetting("userRuleSet", true, (enabled) => {
+    userRulesEnabled = enabled;
+    if (!enabled) {
+      hideUserRules();
+      hidePolicyStyle();
+    }
+    schedulePolicies();
+  });
+}
 watchPolicies();
 schedulePolicies();

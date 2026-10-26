@@ -1,14 +1,8 @@
-const DASH_MX_PRESETS = [
-  { id: "hour", label: "Последний час", seconds: 3600 },
-  { id: "day", label: "Последние 24 часа", seconds: 86400 },
-  { id: "threeDays", label: "Последние 3 дня", seconds: 259200 },
-  { id: "week", label: "Последняя неделя", seconds: 604800 },
-  { id: "month", label: "Последние 30 дней", seconds: 2592000 },
-];
 
 const DASH_MX_COLORS = ["#5b8def", "#e06ca8", "#3dbe8c", "#e0a045", "#8b7cf7"];
 
-let dashMxPreset = "day";
+let dashMxPreset = "1d";
+let dashMxCustom = null;
 let dashMxRule = "";
 let dashMxName = "";
 let dashMxFilter = null;
@@ -21,9 +15,7 @@ let dashMxCache = { rows: [], read: 0, truncated: false, error: "" };
 let dashMxResize = null;
 
 function dashMxRange() {
-  const preset = DASH_MX_PRESETS.find((item) => item.id === dashMxPreset) || DASH_MX_PRESETS[1];
-  const end = Math.floor(Date.now() / 1000);
-  return { start: end - preset.seconds, end };
+  return dashTimeRange(dashMxPreset, dashMxCustom);
 }
 
 function dashMxNameOf(match) {
@@ -655,26 +647,27 @@ function dashMxPaint(theme) {
   root.replaceChildren();
   const toolbar = document.createElement("div");
   toolbar.className = "ptaf-mx-toolbar";
-  const periodLabel = document.createElement("label");
-  periodLabel.append(document.createTextNode("Период "));
-  const period = document.createElement("select");
-  period.className = "ptaf-mx-period";
-  DASH_MX_PRESETS.forEach((preset) => {
-    const option = document.createElement("option");
-    option.value = preset.id;
-    option.textContent = preset.label;
-    option.selected = preset.id === dashMxPreset;
-    period.append(option);
-  });
-  period.addEventListener("change", () => {
-    dashMxPreset = period.value;
+  const periodHost = document.createElement("div");
+  const timeRange = dashMountTimeChoice(periodHost, root, {
+    get preset() {
+      return dashMxPreset;
+    },
+    set preset(value) {
+      dashMxPreset = value;
+    },
+    get custom() {
+      return dashMxCustom;
+    },
+    set custom(value) {
+      dashMxCustom = value;
+    },
+  }, () => {
     dashMxFilter = null;
     dashMxRule = "";
     dashMxName = "";
     dashMatchLoad(theme);
   });
-  periodLabel.append(period);
-  toolbar.append(periodLabel);
+  toolbar.append(periodHost);
 
   const apps = dashMxApps(dashMxCache.rows || []);
   const note = document.createElement("p");
@@ -687,7 +680,7 @@ function dashMxPaint(theme) {
   if (note.textContent) {
     toolbar.append(note);
   }
-  root.append(toolbar);
+  root.append(toolbar, timeRange);
 
   const status = document.createElement("p");
   status.className = "ptaf-mx-empty";

@@ -96,6 +96,9 @@ function stopEvents() {
     eventResourceObserver = null;
   }
   stopDecode();
+  if (typeof stopFilterBar === "function") {
+    stopFilterBar();
+  }
   for (const id of [EVENT_DOWNLOAD_ID, EVENT_IMPORT_ID, EVENT_VIEW_ID]) {
     const node = document.getElementById(id);
     if (node) {
@@ -1143,9 +1146,17 @@ function placeEventImport() {
   slot.append(button);
 }
 
+let eventDownloadEnabled = true;
+
 function placeEventDownload() {
-  const place = eventCardSlot();
   const existing = document.getElementById(EVENT_DOWNLOAD_ID);
+  if (!eventDownloadEnabled) {
+    if (existing) {
+      existing.remove();
+    }
+    return;
+  }
+  const place = eventCardSlot();
   if (!place) {
     if (existing) {
       existing.remove();
@@ -1853,22 +1864,11 @@ function applyDecodeSetting(enabled) {
   }
   watchDecode();
 }
-if (chrome.storage && chrome.storage.onChanged) {
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area !== "local") {
-      return;
-    }
-    if (changes.experimental) {
-      applyEventExperimental(changes.experimental.newValue);
-    }
-    if (changes.selectionDecode) {
-      applyDecodeSetting(changes.selectionDecode.newValue);
-    }
+if (typeof pluginSetting === "function") {
+  pluginSetting("eventImport", "experimental", applyEventExperimental);
+  pluginSetting("eventDownload", true, (enabled) => {
+    eventDownloadEnabled = enabled;
+    scheduleEvents();
   });
-}
-if (chrome.storage && chrome.storage.local) {
-  chrome.storage.local.get({ experimental: false, selectionDecode: false }, (items) => {
-    applyEventExperimental(items && items.experimental);
-    applyDecodeSetting(items && items.selectionDecode);
-  });
+  pluginSetting("selectionDecode", false, applyDecodeSetting);
 }

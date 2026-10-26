@@ -2878,24 +2878,15 @@ function applyExperimentalSetting(enabled) {
 }
 
 function readExperimentalSetting() {
-  if (!chrome.storage || !chrome.storage.local) {
+  if (typeof pluginSetting !== "function") {
     applyExperimentalSetting(false);
     return;
   }
-  chrome.storage.local.get({ experimental: false }, (items) => {
-    applyExperimentalSetting(items && items.experimental);
-  });
+  pluginSetting("compareRules", "experimental", applyExperimentalSetting);
 }
 
 hookCompareHistory();
 document.addEventListener("keydown", onCompareKey);
 watchCompareDom();
 watchCompareTheme();
-if (chrome.storage && chrome.storage.onChanged) {
-  chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === "local" && changes.experimental) {
-      applyExperimentalSetting(changes.experimental.newValue);
-    }
-  });
-}
 readExperimentalSetting();
