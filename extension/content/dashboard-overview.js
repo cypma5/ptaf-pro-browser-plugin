@@ -1147,6 +1147,8 @@ function dashOverviewPause() {
   dashOverviewDisarm();
 }
 
+globalThis.dashOverviewPause = dashOverviewPause;
+
 function dashOverviewReload(theme) {
   if (!dashOvActive) {
     dashOverviewOpen(theme);

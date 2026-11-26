@@ -78,6 +78,9 @@ function certToken() {
 }
 
 async function certApi(path) {
+  if (typeof isPtafUi !== "function" || !isPtafUi()) {
+    return null;
+  }
   const token = certToken();
   if (!token) {
     return null;

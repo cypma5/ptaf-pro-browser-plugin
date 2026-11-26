@@ -400,6 +400,8 @@ function dashEventsPause() {
   dashEventsDisarm();
 }
 
+globalThis.dashEventsPause = dashEventsPause;
+
 function dashEventsReload(theme) {
   if (!dashEvActive) {
     dashEventsOpen(theme);

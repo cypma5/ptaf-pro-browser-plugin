@@ -1745,7 +1745,8 @@ function dashBind(theme) {
       dashMxFilter = null;
       dashMxRule = "";
       dashMxName = "";
-      dashMxPaint(theme);
+      dashMxValueCache = null;
+      dashMatchLoad(theme);
       return;
     }
     dashFilterId = "";
@@ -1895,8 +1896,8 @@ function dashOpenScreen(screen) {
     return;
   }
   if (screen === "overview") {
-    dashEventsPause();
-    dashMatchPause();
+    dashTry("dashEventsPause");
+    dashTry("dashMatchPause");
     dashToken += 1;
     const reload = theme.querySelector(".ptaf-dash-reload");
     if (reload) {
@@ -1906,8 +1907,8 @@ function dashOpenScreen(screen) {
     return;
   }
   if (screen === "events") {
-    dashOverviewPause();
-    dashMatchPause();
+    dashTry("dashOverviewPause");
+    dashTry("dashMatchPause");
     dashToken += 1;
     const reload = theme.querySelector(".ptaf-dash-reload");
     if (reload) {
@@ -1917,8 +1918,8 @@ function dashOpenScreen(screen) {
     return;
   }
   if (screen === "match") {
-    dashOverviewPause();
-    dashEventsPause();
+    dashTry("dashOverviewPause");
+    dashTry("dashEventsPause");
     dashToken += 1;
     const reload = theme.querySelector(".ptaf-dash-reload");
     if (reload) {
@@ -1927,17 +1928,26 @@ function dashOpenScreen(screen) {
     dashMatchOpen(theme);
     return;
   }
-  dashOverviewPause();
-  dashEventsPause();
-  dashMatchPause();
+  dashTry("dashOverviewPause");
+  dashTry("dashEventsPause");
+  dashTry("dashMatchPause");
   dashLoad(theme);
+}
+
+function dashTry(name) {
+  const fn = globalThis[name];
+  if (typeof fn !== "function") {
+    return;
+  }
+  try {
+    fn();
+  } catch (error) {
+    // Ошибка экрана не должна оставлять дашборд поверх меню.
+  }
 }
 
 function dashCloseView(restore) {
   dashCloseSubmenu();
-  dashOverviewPause();
-  dashEventsPause();
-  dashMatchPause();
   dashOpen = false;
   dashFilterId = "";
   dashToken += 1;
@@ -1951,6 +1961,9 @@ function dashCloseView(restore) {
   document.querySelectorAll(`#${DASH_ITEM_ID}`).forEach((item) => {
     item.setAttribute("aria-current", "false");
   });
+  dashTry("dashOverviewPause");
+  dashTry("dashEventsPause");
+  dashTry("dashMatchPause");
   if (restore && dashSavedLabel) {
     document.querySelectorAll("ptaf-panel-menu").forEach((menu) => {
       if (menu.querySelector(".item.selected")) {
@@ -2037,9 +2050,10 @@ function dashOnKey(event) {
     dashMxFilter = null;
     dashMxRule = "";
     dashMxName = "";
+    dashMxValueCache = null;
     const theme = dashHost.shadowRoot && dashHost.shadowRoot.querySelector(".ptaf-theme");
     if (theme) {
-      dashMxPaint(theme);
+      dashMatchLoad(theme);
     }
     return;
   }
@@ -2062,9 +2076,9 @@ function dashStop() {
   dashStopped = true;
   dashOpen = false;
   dashCloseSubmenu();
-  dashOverviewPause();
-  dashEventsPause();
-  dashMatchPause();
+  dashTry("dashOverviewPause");
+  dashTry("dashEventsPause");
+  dashTry("dashMatchPause");
   if (dashFrame) {
     cancelAnimationFrame(dashFrame);
     dashFrame = 0;
