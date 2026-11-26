@@ -21,6 +21,11 @@
         font-size: 16px;
         line-height: 24px;
       }
+      h2 {
+        margin: 24px 0 8px;
+        font-size: 14px;
+        line-height: 20px;
+      }
       .lead {
         margin: 0 0 16px;
         color: gray;
@@ -62,6 +67,11 @@
     </label>
     <p>Вкладка в верхнем меню: цепочка прослушивания и обзор событий и трафика.</p>
     <label>
+      <input id="policy-sync" type="checkbox">
+      <span>Статус политики безопасности</span>
+    </label>
+    <p>В единой консоли в верхней панели показывает синхронизацию политики, кнопку «Отправить» и статус применения модулей на подах.</p>
+    <label>
       <input id="policy-list" type="checkbox">
       <span>Список политик на схеме</span>
     </label>
@@ -77,25 +87,15 @@
     </label>
     <p>Подсвечивает сертификат, до окончания которого осталось меньше 30 дней, и разбирает цепочку.</p>
     <label>
-      <input id="event-download" type="checkbox">
-      <span>Скачать событие JSON</span>
-    </label>
-    <p>Кнопка в карточке события сохраняет все поля и сырой запрос.</p>
-    <label>
-      <input id="event-import" type="checkbox">
-      <span>Импорт события безопасности</span>
-    </label>
-    <p>На странице событий появляется Импорт JSON. Пока галка снята, кнопки нет.</p>
-    <label>
       <input id="compare-rules" type="checkbox">
       <span>Сравнение политики и шаблона</span>
     </label>
     <p>На странице правила сравнивает политику с шаблоном. Пока галка снята, сравнение не показывается.</p>
     <label>
-      <input id="traffic-settings" type="checkbox">
-      <span>traffic_settings</span>
+      <input id="exclusions-summary" type="checkbox">
+      <span>Сводка исключений</span>
     </label>
-    <p>Пункт в меню пользователя. Пока галка снята, пункта нет.</p>
+    <p>На списке правил политики или шаблона появляется вкладка «Исключения». В таблице только свои исключения и пропускаемые части переопределённых правил. Пока галка снята, вкладки нет.</p>
     <label>
       <input id="filter-bar" type="checkbox">
       <span>Графический фильтр событий</span>
@@ -105,7 +105,29 @@
       <input id="selection-decode" type="checkbox">
       <span>Декодирование выделенного текста</span>
     </label>
-    <p>В сыром запросе и сыром ответе у выделения появляются URL Decode и Base64 decode. Пока галка снята, они не показываются.</p>
+    <p>В сыром запросе и сыром ответе у выделения появляются URL Decode, Base64 decode, JWT decode, Pretty JSON, HTML entities, JS unescape и Pretty XML. Пока галка снята, они не показываются.</p>
+    <h2>Экспериментальные</h2>
+    <p class="lead">По умолчанию выключены. Старая общая галка экспериментальных функций их больше не включает.</p>
+    <label>
+      <input id="traffic-settings" type="checkbox">
+      <span>traffic_settings</span>
+    </label>
+    <p>Пункт в меню пользователя. Пока галка снята, пункта нет.</p>
+    <label>
+      <input id="event-download" type="checkbox">
+      <span>Скачать событие JSON</span>
+    </label>
+    <p>Кнопка в карточке события сохраняет все поля и сырой запрос. Пока галка снята, кнопки нет.</p>
+    <label>
+      <input id="event-import" type="checkbox">
+      <span>Просмотр загруженного события безопасности</span>
+    </label>
+    <p>На странице событий появляется «Просмотр JSON». Файл открывается в окне и в систему не записывается. Пока галка снята, кнопки нет.</p>
+    <label>
+      <input id="user-rule-builder" type="checkbox">
+      <span>Графический конструктор пользовательских правил</span>
+    </label>
+    <p>На карточке кода пользовательского правила появляется переключатель «Текст» / «Графика». Пока галка снята, переключателя нет.</p>
     <script src="options.js"></script>
   </body>
 </html>

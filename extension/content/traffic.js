@@ -17,7 +17,14 @@ const TRAFFIC_FIELDS = [
         key: "core_nginx_host_header_mode",
         label: "Заголовок Host",
         kind: "enum",
+        hint: "Переопределение заголовка запроса Host или добавление к нему значений.",
         options: ["host_listen_port", "only_host", "origin_host", "legacy"],
+        optionNotes: {
+          host_listen_port: "Передача в заголовке Host имени сервера и порта проксируемого сервера. Соответствует значению директивы nginx proxy_set_header Host $host:<port>.",
+          only_host: "Передача в заголовке Host имени сервера. Соответствует значению директивы nginx proxy_set_header Host $host.",
+          origin_host: "Позволяет передать неизмененный заголовок Host. Соответствует значению директивы nginx proxy_set_header Host $http_host.",
+          legacy: "Позволяет использовать в заголовке Host разные значения в зависимости от портов: для портов 80 и 443 будет использоваться значение only_host, для остальных портов — значение host_listen_port.",
+        },
       },
       { key: "envoy_preserve_headers_case", label: "Сохранять регистр заголовков", kind: "boolean" },
     ],
@@ -129,9 +136,184 @@ const LOCKED_LOG_KEYS = new Set([
   "core_envoy_log_level",
 ]);
 
+const TRAFFIC_HELP = {
+  max_applications_count: "Максимальное количество веб-приложений в изолированном пространстве. Максимальное значение — 30.",
+  core_nginx_client_max_body_size: "Максимальный размер тела запроса.",
+  envoy_preserve_headers_case: "Сохранять ли регистр для названий заголовков запросов, получаемых от клиента. Возможные значения: true — сохранять регистр; false — приводить к нижнему регистру. Параметр влияет на все профили трафика, для которых в качестве сервера для обработки трафика выбран Envoy, и на профили трафика с типом балансировщика «Внешний с контролем IP-адресов», для которых в качестве сервера обработки трафика выбран nginx. При использовании механизма плавного завершения сессии заголовки запросов всегда приводятся к нижнему регистру, параметр envoy_preserve_headers_case не влияет на регистр заголовков.",
+  core_nginx_proxy_buffers: "Количество и размер буферов, используемых для считывания ответа от проксируемого сервера для одного подключения. Количество буферов должно быть 2 или больше.",
+  core_nginx_proxy_buffer_size: "Максимальный размер буфера для чтения заголовков ответа от проксируемого сервера.",
+  core_nginx_proxy_busy_buffers_size: "Размер буферов, которые могут быть заняты для отправки ответа клиенту, пока ответ еще не прочитан целиком. Минимальное значение должно быть больше или равно большему из значений core_nginx_proxy_buffer_size или core_nginx_proxy_buffers. Максимальное значение должно быть меньше, чем (core_nginx_proxy_buffers.num - 1) * core_nginx_proxy_buffers.size.",
+  core_nginx_client_body_buffer_size: "Размер буфера для чтения тела запроса клиента в ядре nginx (ptaf-core).",
+  core_nginx_client_header_buffer_size: "Максимальный размер буфера для чтения заголовка запроса клиента в ядре nginx (ptaf-core).",
+  core_nginx_large_client_header_buffers: "Максимальное число и размер буферов для чтения большого заголовка запроса клиента в ядре nginx (ptaf-core).",
+  envoy_per_connection_buffer_limit_bytes: "Максимальный размер буферов в байтах для чтения и записи в рамках одного соединения.",
+  core_nginx_proxy_read_timeout: "Тайм-аут при чтении ответа проксированного сервера.",
+  core_nginx_proxy_send_timeout: "Тайм-аут при передаче запроса проксированному серверу.",
+  core_nginx_send_timeout: "Тайм-аут при передаче ответа клиенту.",
+  core_nginx_keepalive_timeout: "Время, в течение которого поддерживаемое клиентское соединение будет оставаться открытым на стороне сервера.",
+  core_nginx_proxy_connect_timeout: "Тайм-аут для установления соединения с прокси-сервером.",
+  core_nginx_worker_shutdown_timeout: "Тайм-аут в секундах для плавного завершения рабочих процессов.",
+  core_nginx_client_body_timeout: "Тайм-аут при чтении тела запроса клиента.",
+  core_nginx_client_header_timeout: "Тайм-аут при чтении заголовка запроса клиента.",
+  core_nginx_resolver_timeout: "Тайм-аут для преобразования имени в адрес в ptaf-core.",
+  core_envoy_listener_route_idle_timeout: "Время, в течение которого соединение может существовать без активности в восходящем или нисходящем направлении. Переопределяет тайм-аут core_envoy_listener_stream_idle_timeout.",
+  core_envoy_listener_stream_idle_timeout: "Время, в течение которого соединение может существовать без активности в восходящем или нисходящем направлении.",
+  core_envoy_listener_idle_timeout: "Время существования соединения без активных запросов. По истечении этого времени соединение будет закрыто.",
+  core_envoy_cluster_connect_timeout: "Время ожидания для новых сетевых подключений к узлам в кластере.",
+  core_envoy_cluster_query_timeout_seconds: "Время в секундах, которое дается каждому серверу для ответа на запрос с первой попытки.",
+  core_envoy_listener_request_headers_timeout: "Время ожидания получения заголовков запроса.",
+  core_envoy_listener_route_timeout: "Тайм-аут ожидания ответа от ядра Envoy (ptaf-envoy).",
+  core_nginx_access_log: "Записывать ли события в журнал access.log.",
+  core_nginx_access_log_format: "Формат записи данных в журнал access.log.",
+  core_nginx_access_log_path: "Расположение журнала access.log.",
+  core_nginx_error_log_enabled: "Записывать ли события в журнал error.log.",
+  core_nginx_error_log_endpoints: "Список точек назначения для отправки данных журнала error.log.",
+  core_envoy_access_log_enabled: "Записывать ли события в журнал access.log.",
+  core_envoy_access_log_format: "Формат записи данных в журнал access.log.",
+  core_envoy_error_log_format: "Формат записи данных в журнал error.log.",
+  core_nginx_log_level: "Уровень логирования на сервере nginx. Возможные значения: error, info, debug, warn.",
+  core_envoy_log_level: "Уровень логирования на сервере Envoy. Возможные значения: trace, debug, info, warn, error, critical, off.",
+  core_ptaf_log_level: "Уровень логирования модуля ядра PT AF. Возможные значения: trace, debug, info, warning, error, fatal, crit. Для сохранения производительности модуля ядра значение debug необходимо присваивать временно для максимальной детализации логирования и выключать, когда вся необходимая информация получена.",
+  envoy_proxy_log_level: "Уровень логирования на сервере Envoy при использовании внешнего балансировщика нагрузки с контролем IP-адресов. Возможные значения: trace, debug, info, warn, error, critical, off.",
+};
+
+function trafficHelpText(field) {
+  if (field.hint) {
+    return field.hint;
+  }
+  return TRAFFIC_HELP[field.key] || "";
+}
+
+const TRAFFIC_CATALOG = TRAFFIC_FIELDS.flatMap((group) => group.fields);
+const TRAFFIC_KNOWN_KEYS = new Set(TRAFFIC_CATALOG.map((field) => field.key));
+const TRAFFIC_FIELD_BY_KEY = new Map(TRAFFIC_CATALOG.map((field) => [field.key, field]));
+const TRAFFIC_GROUPS = [
+  { id: "nginx", title: "core-nginx" },
+  { id: "envoy", title: "core-envoy" },
+  { id: "proxy", title: "proxy-envoy" },
+  { id: "core", title: "core_", hint: "Параметры ядра PT AF" },
+  { id: "common", title: "Остальные параметры", hint: "Параметры тенанта" },
+];
+
 let trafficOriginal = null;
 let trafficDraft = null;
 let trafficLogsLocked = false;
+let trafficScope = { nginx: true, envoy: true, proxy: true, note: "" };
+
+function trafficKeyFamily(key) {
+  if (key.startsWith("core_nginx")) {
+    return "nginx";
+  }
+  if (key.startsWith("core_envoy") || (key.startsWith("envoy_") && !key.startsWith("envoy_proxy"))) {
+    return "envoy";
+  }
+  if (key.startsWith("envoy_proxy")) {
+    return "proxy";
+  }
+  if (key.startsWith("core_")) {
+    return "core";
+  }
+  return "common";
+}
+
+function trafficKeyApplicable(key) {
+  const family = trafficKeyFamily(key);
+  if (family === "nginx") {
+    return trafficScope.nginx;
+  }
+  if (family === "envoy") {
+    return trafficScope.envoy;
+  }
+  if (family === "proxy") {
+    return trafficScope.proxy;
+  }
+  return true;
+}
+
+function trafficList(body) {
+  if (Array.isArray(body)) {
+    return body;
+  }
+  if (body && Array.isArray(body.items)) {
+    return body.items;
+  }
+  return [];
+}
+
+function trafficCoreKind(tenant) {
+  const processing = tenant && tenant.traffic_processing;
+  const value = tenant && (tenant.core_type || (processing && processing.core_type));
+  const text = String(value || "").toUpperCase();
+  if (text.includes("ENVOY")) {
+    return "envoy";
+  }
+  if (text.includes("NGINX")) {
+    return "nginx";
+  }
+  return "";
+}
+
+function trafficHasStaticBalancer(body) {
+  return trafficList(body).some((profile) => {
+    const balancer = profile && profile.balancer;
+    return Boolean(balancer && balancer.type === "STATIC_BALANCER");
+  });
+}
+
+function trafficScopeFrom(tenantResult, profilesResult) {
+  const core = tenantResult.ok ? trafficCoreKind(tenantResult.body) : "";
+  const proxy = !profilesResult.ok || trafficHasStaticBalancer(profilesResult.body);
+  const note = [];
+  if (core === "nginx") {
+    note.push("Тип прокси тенанта — nginx. Параметры подов Envoy скрыты.");
+  } else if (core === "envoy") {
+    note.push("Тип прокси тенанта — Envoy. Параметры подов nginx скрыты.");
+  }
+  if (profilesResult.ok && !proxy) {
+    note.push("Нет профиля «Внешняя с контролем IP адресов», параметры envoy_proxy скрыты.");
+  }
+  return {
+    nginx: core !== "envoy",
+    envoy: core !== "nginx",
+    proxy,
+    note: note.join(" "),
+  };
+}
+
+function trafficValueKind(value) {
+  if (typeof value === "boolean") {
+    return "boolean";
+  }
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? "integer" : "string";
+  }
+  if (Array.isArray(value)) {
+    const plain = value.every((item) => item == null || typeof item !== "object");
+    return plain ? "array" : "json";
+  }
+  if (value && typeof value === "object") {
+    return "json";
+  }
+  return "string";
+}
+
+function trafficReadonlyField(key, value) {
+  const field = { key, label: key, kind: trafficValueKind(value), readonly: true };
+  if (TRAFFIC_HELP[key]) {
+    field.hint = TRAFFIC_HELP[key];
+  }
+  return field;
+}
+
+function trafficLockNote(field) {
+  if (field.readonly) {
+    return "Только просмотр";
+  }
+  if (trafficLogsLocked && LOCKED_LOG_KEYS.has(field.key)) {
+    return "Не задаётся в версии 4.5.2 и выше";
+  }
+  return "";
+}
 
 function versionParts(value) {
   const match = String(value || "").match(/(\d+)\.(\d+)\.(\d+)/);
@@ -368,6 +550,9 @@ function trafficError(status, body) {
 }
 
 async function trafficApi(path, options) {
+  if (typeof isPtafUi !== "function" || !isPtafUi()) {
+    throw new Error(trafficError(401));
+  }
   const token = trafficToken();
   if (!token) {
     throw new Error(trafficError(401));
@@ -400,6 +585,8 @@ async function trafficApi(path, options) {
 
 const CHANGE_PASSWORD_ITEM = /change password|сменить пароль|изменить пароль/i;
 const LOG_OUT_ITEM = /log\s*out|выйти/i;
+const LANGUAGE_ITEM = /(?:^|\s)(?:language|язык)(?:\s|$)/i;
+const THEME_ITEM = /(?:^|\s)(?:theme|тема)(?:\s|$)/i;
 
 function menuText(node) {
   return (node.innerText || node.textContent || "").replace(/\s+/g, " ").trim();
@@ -408,7 +595,10 @@ function menuText(node) {
 function userMenus() {
   return [...document.querySelectorAll(".kbq-dropdown__content")].filter((menu) => {
     const text = menuText(menu);
-    return CHANGE_PASSWORD_ITEM.test(text) && LOG_OUT_ITEM.test(text);
+    if (!LOG_OUT_ITEM.test(text)) {
+      return false;
+    }
+    return CHANGE_PASSWORD_ITEM.test(text) || LANGUAGE_ITEM.test(text) || THEME_ITEM.test(text);
   });
 }
 
@@ -463,6 +653,7 @@ function tenantMenuItem(source) {
   item.removeAttribute("disabled");
   item.id = TRAFFIC_BUTTON_ID;
   replaceItemLabel(item, "traffic_settings");
+  item.title = "Эксперимент";
   item.addEventListener("click", onTenantMenuClick);
   return item;
 }
@@ -566,26 +757,260 @@ function rememberForm(dialog) {
     return;
   }
   dialog.querySelectorAll("[data-key]").forEach((control) => {
-    if (control.disabled) {
+    if (control.disabled || control.dataset.readonly === "1") {
       return;
     }
     trafficDraft[control.dataset.key] = fieldValue(control, trafficDraft[control.dataset.key]);
   });
 }
 
+function appendTrafficField(section, field, value) {
+  const row = document.createElement("label");
+  row.className = "ptaf-traffic-row";
+  const caption = document.createElement("span");
+  caption.className = "ptaf-traffic-caption";
+  const name = document.createElement("span");
+  name.className = "ptaf-traffic-name";
+  name.textContent = field.label;
+  caption.append(name);
+  const aside = document.createElement("span");
+  aside.className = "ptaf-traffic-aside";
+  const help = trafficHelpText(field);
+  if (help || field.optionNotes) {
+    aside.append(trafficInfoButton(help, field));
+  }
+  if (field.label !== field.key) {
+    const key = document.createElement("span");
+    key.className = "ptaf-traffic-key";
+    key.textContent = field.key;
+    aside.append(key);
+  }
+  if (aside.childElementCount) {
+    caption.append(aside);
+  }
+  row.append(caption);
+  let control;
+  if (field.kind === "boolean") {
+    control = document.createElement("input");
+    control.type = "checkbox";
+    control.checked = Boolean(value);
+    control.className = "ptaf-traffic-check";
+  } else if (field.kind === "enum") {
+    control = document.createElement("select");
+    control.className = "ptaf-traffic-input";
+    const options = field.options.slice();
+    if (value != null && options.indexOf(String(value)) === -1) {
+      options.unshift(String(value));
+    }
+    for (const optionValue of options) {
+      const option = document.createElement("option");
+      option.value = optionValue;
+      option.textContent = optionValue;
+      control.append(option);
+    }
+    control.value = value == null ? "" : String(value);
+  } else if (field.kind === "array") {
+    control = document.createElement("textarea");
+    control.className = "ptaf-traffic-input";
+    control.rows = 3;
+    control.value = Array.isArray(value) ? value.join("\n") : "";
+  } else if (field.kind === "json") {
+    control = document.createElement("textarea");
+    control.className = "ptaf-traffic-input";
+    const text = value == null ? "" : JSON.stringify(value, null, 2);
+    control.rows = Math.min(12, Math.max(3, text.split("\n").length));
+    control.value = text;
+  } else {
+    control = document.createElement("input");
+    control.type = field.kind === "integer" ? "number" : "text";
+    control.className = "ptaf-traffic-input";
+    if (field.max) {
+      control.max = String(field.max);
+    }
+    control.value = value == null ? "" : String(value);
+  }
+  control.dataset.key = field.key;
+  control.dataset.kind = field.kind;
+  control.dataset.label = field.label;
+  const note = trafficLockNote(field);
+  if (note) {
+    control.disabled = true;
+    if (field.readonly) {
+      control.dataset.readonly = "1";
+    }
+    const mark = document.createElement("span");
+    mark.className = "ptaf-traffic-lock";
+    mark.textContent = note;
+    row.append(mark);
+  }
+  row.append(control);
+  section.append(row);
+}
+
+function trafficInfoButton(help, field) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "ptaf-traffic-info";
+  button.setAttribute("aria-label", "Описание параметра");
+  button.textContent = "i";
+  const stop = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+  button.addEventListener("click", stop);
+  button.addEventListener("mousedown", stop);
+  const show = () => showTrafficTip(button, help, field);
+  button.addEventListener("mouseenter", () => {
+    cancelHideTrafficTip();
+    show();
+  });
+  button.addEventListener("focus", show);
+  button.addEventListener("mouseleave", scheduleHideTrafficTip);
+  button.addEventListener("blur", (event) => {
+    const root = button.getRootNode();
+    const tip = root.querySelector && root.querySelector(".ptaf-traffic-tip");
+    if (tip && event.relatedTarget && tip.contains(event.relatedTarget)) {
+      return;
+    }
+    hideTrafficTip();
+  });
+  return button;
+}
+
+function showTrafficTip(button, help, field) {
+  const root = button.getRootNode();
+  const host = root.querySelector && root.querySelector(".ptaf-theme");
+  if (!host) {
+    return;
+  }
+  let tip = host.querySelector(".ptaf-traffic-tip");
+  if (!tip) {
+    tip = document.createElement("div");
+    tip.className = "ptaf-traffic-tip";
+    tip.setAttribute("role", "tooltip");
+    tip.tabIndex = -1;
+    tip.addEventListener("mouseenter", cancelHideTrafficTip);
+    tip.addEventListener("mouseleave", scheduleHideTrafficTip);
+    host.append(tip);
+  }
+  tip.replaceChildren();
+  if (help) {
+    const text = document.createElement("p");
+    text.textContent = help;
+    tip.append(text);
+  }
+  if (field.optionNotes) {
+    const list = document.createElement("ul");
+    const listed = (field.options || Object.keys(field.optionNotes)).slice();
+    for (const optionValue of listed) {
+      if (!field.optionNotes[optionValue]) {
+        continue;
+      }
+      const item = document.createElement("li");
+      const name = document.createElement("strong");
+      name.textContent = optionValue;
+      const text = document.createElement("span");
+      text.textContent = field.optionNotes[optionValue];
+      item.append(name, text);
+      list.append(item);
+    }
+    tip.append(list);
+  }
+  tip.hidden = false;
+  placeTrafficTip(tip, button);
+}
+
+function placeTrafficTip(tip, button) {
+  const root = button.getRootNode();
+  const dialog = root.querySelector(".ptaf-traffic-dialog");
+  const dialogRect = dialog.getBoundingClientRect();
+  const row = button.closest(".ptaf-traffic-row");
+  const rowRect = (row || button).getBoundingClientRect();
+  const icon = button.getBoundingClientRect();
+  const margin = 8;
+  const gap = 8;
+  const spaceRight = Math.max(0, window.innerWidth - dialogRect.right - margin);
+  const spaceLeft = Math.max(0, dialogRect.left - margin);
+  tip.style.width = "";
+  tip.style.maxHeight = "";
+  if (spaceRight >= 240 || spaceLeft >= 240) {
+    const onRight = spaceRight >= 240;
+    const room = onRight ? spaceRight : spaceLeft;
+    const width = Math.min(560, room - gap);
+    tip.style.width = width + "px";
+    const height = tip.getBoundingClientRect().height;
+    const left = onRight ? dialogRect.right + gap : dialogRect.left - width - gap;
+    const top = Math.max(margin, Math.min(icon.top, window.innerHeight - height - margin));
+    tip.style.left = left + "px";
+    tip.style.top = top + "px";
+    return;
+  }
+  const spaceBelow = window.innerHeight - rowRect.bottom - margin - gap;
+  const spaceAbove = rowRect.top - margin - gap;
+  const placeBelow = spaceBelow >= spaceAbove;
+  tip.style.maxHeight = Math.min(420, Math.max(120, placeBelow ? spaceBelow : spaceAbove)) + "px";
+  const width = Math.min(560, window.innerWidth - margin * 2);
+  tip.style.width = width + "px";
+  const height = tip.getBoundingClientRect().height;
+  const left = Math.max(margin, Math.min(icon.right - width, window.innerWidth - width - margin));
+  const top = placeBelow ? rowRect.bottom + gap : Math.max(margin, rowRect.top - height - gap);
+  tip.style.left = left + "px";
+  tip.style.top = top + "px";
+}
+
+let trafficTipHideTimer = 0;
+
+function cancelHideTrafficTip() {
+  window.clearTimeout(trafficTipHideTimer);
+}
+
+function scheduleHideTrafficTip() {
+  cancelHideTrafficTip();
+  trafficTipHideTimer = window.setTimeout(hideTrafficTip, 200);
+}
+
+function hideTrafficTip() {
+  cancelHideTrafficTip();
+  const dialog = document.getElementById(TRAFFIC_DIALOG_ID);
+  const root = dialog && dialog.shadowRoot;
+  const tip = root && root.querySelector(".ptaf-traffic-tip");
+  if (tip) {
+    tip.hidden = true;
+  }
+}
+
+function trafficGroupKeys(family, settings) {
+  const present = Object.keys(settings).filter((key) => {
+    return trafficKeyFamily(key) === family && trafficKeyApplicable(key);
+  });
+  const known = TRAFFIC_CATALOG
+    .map((field) => field.key)
+    .filter((key) => present.includes(key));
+  const extra = present.filter((key) => !known.includes(key)).sort();
+  return known.concat(extra);
+}
+
 function fillTrafficForm(dialog, settings) {
   const form = dialog.querySelector(".ptaf-traffic-form");
+  const scopeNote = dialog.querySelector(".ptaf-traffic-scope");
+  if (scopeNote) {
+    scopeNote.hidden = !trafficScope.note;
+    scopeNote.textContent = trafficScope.note || "";
+  }
   form.replaceChildren();
   const query = dialog.querySelector(".ptaf-traffic-search").value.trim().toLowerCase();
-  for (const group of TRAFFIC_FIELDS) {
-    const present = group.fields.filter((field) => Object.prototype.hasOwnProperty.call(settings, field.key));
-    const visible = present.filter((field) => {
-      if (!query) {
-        return true;
-      }
-      return (field.label + " " + field.key).toLowerCase().includes(query);
-    });
-    if (!visible.length) {
+  for (const group of TRAFFIC_GROUPS) {
+    const fields = trafficGroupKeys(group.id, settings)
+      .map((key) => TRAFFIC_FIELD_BY_KEY.get(key) || trafficReadonlyField(key, settings[key]))
+      .filter((field) => {
+        if (!query) {
+          return true;
+        }
+        const help = trafficHelpText(field);
+        const notes = field.optionNotes ? Object.keys(field.optionNotes).map((name) => name + " " + field.optionNotes[name]).join(" ") : "";
+        return (field.label + " " + field.key + " " + help + " " + notes).toLowerCase().includes(query);
+      });
+    if (!fields.length) {
       continue;
     }
     const section = document.createElement("section");
@@ -593,72 +1018,21 @@ function fillTrafficForm(dialog, settings) {
     const title = document.createElement("h3");
     title.textContent = group.title;
     section.append(title);
-    for (const field of visible) {
-      const value = settings[field.key];
-      const row = document.createElement("label");
-      row.className = "ptaf-traffic-row";
-      const caption = document.createElement("span");
-      caption.className = "ptaf-traffic-caption";
-      const name = document.createElement("span");
-      name.textContent = field.label;
-      const key = document.createElement("span");
-      key.className = "ptaf-traffic-key";
-      key.textContent = field.key;
-      caption.append(name, key);
-      row.append(caption);
-      let control;
-      if (field.kind === "boolean") {
-        control = document.createElement("input");
-        control.type = "checkbox";
-        control.checked = Boolean(value);
-        control.className = "ptaf-traffic-check";
-      } else if (field.kind === "enum") {
-        control = document.createElement("select");
-        control.className = "ptaf-traffic-input";
-        const options = field.options.slice();
-        if (value != null && options.indexOf(String(value)) === -1) {
-          options.unshift(String(value));
-        }
-        for (const optionValue of options) {
-          const option = document.createElement("option");
-          option.value = optionValue;
-          option.textContent = optionValue;
-          control.append(option);
-        }
-        control.value = value == null ? "" : String(value);
-      } else if (field.kind === "array") {
-        control = document.createElement("textarea");
-        control.className = "ptaf-traffic-input";
-        control.rows = 3;
-        control.value = Array.isArray(value) ? value.join("\n") : "";
-      } else {
-        control = document.createElement("input");
-        control.type = field.kind === "integer" ? "number" : "text";
-        control.className = "ptaf-traffic-input";
-        if (field.max) {
-          control.max = String(field.max);
-        }
-        control.value = value == null ? "" : String(value);
-      }
-      control.dataset.key = field.key;
-      control.dataset.kind = field.kind;
-      control.dataset.label = field.label;
-      if (trafficLogsLocked && LOCKED_LOG_KEYS.has(field.key)) {
-        control.disabled = true;
-        const note = document.createElement("span");
-        note.className = "ptaf-traffic-lock";
-        note.textContent = "Не задаётся в версии 4.5.2 и выше";
-        caption.append(note);
-      }
-      row.append(control);
-      section.append(row);
+    if (group.hint) {
+      const hint = document.createElement("p");
+      hint.className = "ptaf-traffic-group-hint";
+      hint.textContent = group.hint;
+      section.append(hint);
+    }
+    for (const field of fields) {
+      appendTrafficField(section, field, settings[field.key]);
     }
     form.append(section);
   }
   if (!form.childElementCount) {
     const empty = document.createElement("p");
     empty.className = "ptaf-traffic-empty";
-    empty.textContent = query ? "Ничего не найдено." : "В ответе нет настраиваемых параметров.";
+    empty.textContent = query ? "Ничего не найдено." : "В ответе нет параметров.";
     form.append(empty);
   }
 }
@@ -668,14 +1042,17 @@ async function loadTraffic(dialog) {
   save.disabled = true;
   setTrafficStatus(dialog, "Загрузка параметров...", "info");
   try {
-    const [settings, versions] = await Promise.all([
+    const [settings, versions, tenantResult, profilesResult] = await Promise.all([
       trafficApi(TRAFFIC_API),
       trafficApi("/api/ptaf/v4/about/versions").catch(() => null),
+      trafficApi("/api/ptaf/v4/auth/current_tenant").then((body) => ({ ok: true, body })).catch(() => ({ ok: false })),
+      trafficApi("/api/ptaf/v4/config/traffic_profiles").then((body) => ({ ok: true, body })).catch(() => ({ ok: false })),
     ]);
     if (!dialog.isConnected) {
       return;
     }
     trafficLogsLocked = versionAtLeast(productVersion(versions), [4, 5, 2]);
+    trafficScope = trafficScopeFrom(tenantResult, profilesResult);
     trafficOriginal = settings && typeof settings === "object" ? settings : {};
     trafficDraft = Object.assign({}, trafficOriginal);
     fillTrafficForm(dialog, trafficDraft);
@@ -698,6 +1075,9 @@ async function saveTraffic(dialog) {
     rememberForm(dialog);
     patch = {};
     Object.keys(trafficDraft).forEach((key) => {
+      if (!TRAFFIC_KNOWN_KEYS.has(key) || !trafficKeyApplicable(key)) {
+        return;
+      }
       if (trafficLogsLocked && LOCKED_LOG_KEYS.has(key)) {
         return;
       }
@@ -754,6 +1134,7 @@ function openTrafficDialog() {
       <p class="ptaf-traffic-warning">Это дополнительный модуль (addon). Компания Positive Technologies его не поддерживает. Используйте на свой страх и риск.</p>
       <p class="ptaf-traffic-warning">Изменение параметров влияет на все веб-приложения изолированного пространства и может нарушить работу PT AF.</p>
       <input class="ptaf-traffic-search" type="search" placeholder="Поиск параметра" aria-label="Поиск параметра">
+      <p class="ptaf-traffic-scope" hidden></p>
       <div class="ptaf-traffic-form"></div>
       <p class="ptaf-traffic-status" hidden></p>
       <div class="ptaf-traffic-actions">
@@ -840,7 +1221,7 @@ function readTrafficExperimental() {
     applyTrafficExperimental(false);
     return;
   }
-  pluginSetting("trafficSettings", "experimental", applyTrafficExperimental);
+  pluginSetting("trafficSettings", false, applyTrafficExperimental);
 }
 
 readTrafficExperimental();

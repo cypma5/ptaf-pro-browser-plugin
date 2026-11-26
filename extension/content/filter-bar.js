@@ -1058,6 +1058,9 @@ function onFilterRangeMessage(event) {
 }
 
 function installFilterRangeBridge() {
+  if (typeof isPtafUi !== "function" || !isPtafUi()) {
+    return Promise.resolve();
+  }
   if (filterBarBridgeReady) {
     return filterBarBridgeReady;
   }

@@ -1,7 +1,7 @@
 const EVENT_DOWNLOAD_ID = "ptaf-event-download";
 const EVENT_DOWNLOAD_LABEL = "Скачать JSON";
 const EVENT_IMPORT_ID = "ptaf-event-import";
-const EVENT_IMPORT_LABEL = "Импорт JSON";
+const EVENT_IMPORT_LABEL = "Просмотр JSON";
 const EVENT_VIEW_ID = "ptaf-event-view";
 const DECODE_ID = "ptaf-decode-pop";
 const DECODE_STYLE_ID = "ptaf-decode-style";
@@ -69,6 +69,7 @@ let decodeOrigin = "";
 let decodeRange = null;
 let decodeWatching = false;
 let decodePointerInSource = false;
+let decodeInteracting = false;
 
 function eventContextAlive() {
   try {
@@ -361,6 +362,11 @@ async function loadSecurityEvent(id) {
 }
 
 async function eventBytes(path) {
+  if (typeof isPtafUi !== "function" || !isPtafUi()) {
+    const error = new Error(errorMessage(401));
+    error.status = 401;
+    throw error;
+  }
   const token = getAccessToken();
   if (!token) {
     const error = new Error(errorMessage(401));
@@ -1024,7 +1030,7 @@ function openEventView(data) {
 
   const note = document.createElement("p");
   note.className = "ptaf-event-note";
-  note.textContent = "Событие из файла. Это дополнительный модуль (addon). Компания Positive Technologies его не поддерживает.";
+  note.textContent = "Событие из файла, только просмотр: в систему оно не записывается. Это дополнительный модуль (addon). Компания Positive Technologies его не поддерживает.";
 
   const tabs = document.createElement("div");
   tabs.className = "ptaf-event-tabs";
@@ -1140,13 +1146,13 @@ function placeEventImport() {
   button.type = "button";
   button.ptafEventBound = true;
   button.textContent = EVENT_IMPORT_LABEL;
-  button.title = "Эксперимент. Перетащите JSON события или выберите файл";
+  button.title = "Эксперимент. Открыть JSON события для просмотра. В систему событие не записывается";
   button.style.cssText = "box-sizing:border-box;flex:0 0 auto;align-self:center;height:32px;margin:0 0 0 8px;padding:0 12px;border:1px solid rgba(180,186,204,.45);border-radius:8px;background:transparent;color:inherit;font:13px/16px Inter,Segoe UI,sans-serif;white-space:nowrap;cursor:pointer;";
   bindEventImport(button);
   slot.append(button);
 }
 
-let eventDownloadEnabled = true;
+let eventDownloadEnabled = false;
 
 function placeEventDownload() {
   const existing = document.getElementById(EVENT_DOWNLOAD_ID);
@@ -1178,7 +1184,7 @@ function placeEventDownload() {
   button.dataset.header = place.header ? "1" : "0";
   button.textContent = eventDownloading ? "…" : EVENT_DOWNLOAD_LABEL;
   button.disabled = eventDownloading;
-  button.title = "Скачать событие целиком: все поля и сырой запрос";
+  button.title = "Эксперимент. Скачать событие целиком: все поля и сырой запрос";
   button.style.cssText = place.header
     ? "box-sizing:border-box;flex:0 0 auto;align-self:center;height:24px;margin:0 8px 0 auto;padding:0 10px;border:1px solid rgba(180,186,204,.45);border-radius:8px;background:transparent;color:inherit;font:13px/16px Inter,Segoe UI,sans-serif;white-space:nowrap;cursor:pointer;"
     : "box-sizing:border-box;flex:0 0 auto;align-self:center;height:32px;margin:0 8px 0 0;padding:0 12px;border:1px solid rgba(180,186,204,.45);border-radius:8px;background:transparent;color:inherit;font:13px/16px Inter,Segoe UI,sans-serif;white-space:nowrap;cursor:pointer;";
@@ -1291,6 +1297,547 @@ function base64DecodeText(value) {
   return decoded;
 }
 
+function jwtPartJson(segment) {
+  let text = String(segment || "").replace(/-/g, "+").replace(/_/g, "/");
+  if (!text || !/^[A-Za-z0-9+/]+={0,2}$/.test(text)) {
+    throw new Error("Выделенный текст не похож на JWT.");
+  }
+  const pad = text.length % 4;
+  if (pad === 1) {
+    throw new Error("Выделенный текст не похож на JWT.");
+  }
+  if (pad) {
+    text += "=".repeat(4 - pad);
+  }
+  let binary = "";
+  try {
+    binary = atob(text);
+  } catch (error) {
+    throw new Error("Выделенный текст не похож на JWT.");
+  }
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  let decoded = "";
+  try {
+    decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+  } catch (error) {
+    throw new Error("Выделенный текст не похож на JWT.");
+  }
+  let data = null;
+  try {
+    data = JSON.parse(decoded);
+  } catch (error) {
+    throw new Error("Выделенный текст не похож на JWT.");
+  }
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("Выделенный текст не похож на JWT.");
+  }
+  return data;
+}
+
+function jwtDecodeText(value) {
+  let text = cleanDecodeText(value);
+  if ((text.startsWith('"') && text.endsWith('"') && text.length > 2) || (text.startsWith("'") && text.endsWith("'") && text.length > 2)) {
+    text = text.slice(1, -1).trim();
+  }
+  text = text.replace(/^bearer\s+/i, "");
+  text = text.replace(/\s+/g, "");
+  const parts = text.split(".");
+  if (parts.length !== 2 && parts.length !== 3) {
+    throw new Error("Выделенный текст не похож на JWT.");
+  }
+  const header = jwtPartJson(parts[0]);
+  const payload = jwtPartJson(parts[1]);
+  const lines = ["header", JSON.stringify(header, null, 2), "", "payload", JSON.stringify(payload, null, 2)];
+  const times = ["exp", "nbf", "iat"].map((key) => {
+    const stamp = eventStamp(payload[key]);
+    return stamp ? `${key} ${stamp}` : "";
+  }).filter(Boolean);
+  if (times.length) {
+    lines.push("", times.join("\n"));
+  }
+  lines.push("", "signature");
+  if (parts.length === 3 && parts[2]) {
+    lines.push(parts[2], "подпись не проверялась");
+  } else {
+    lines.push("подпись отсутствует");
+  }
+  return lines.join("\n");
+}
+
+function prettyJsonText(value) {
+  let text = cleanDecodeText(value);
+  if ((text.startsWith('"') && text.endsWith('"') && text.length > 2) || (text.startsWith("'") && text.endsWith("'") && text.length > 2)) {
+    const inner = text.slice(1, -1).trim();
+    if (inner.startsWith("{") || inner.startsWith("[")) {
+      text = inner;
+    }
+  }
+  let data = null;
+  try {
+    data = JSON.parse(text);
+  } catch (error) {
+    throw new Error("Выделенный текст не является JSON.");
+  }
+  return JSON.stringify(data, null, 2);
+}
+
+function htmlEntityMap() {
+  if (htmlEntityMap.table) {
+    return htmlEntityMap.table;
+  }
+  const names = "nbsp iexcl cent pound curren yen brvbar sect uml copy ordf laquo not shy reg macr deg plusmn sup2 sup3 acute micro para middot cedil sup1 ordm raquo frac14 frac12 frac34 iquest Agrave Aacute Acirc Atilde Auml Aring AElig Ccedil Egrave Eacute Ecirc Euml Igrave Iacute Icirc Iuml ETH Ntilde Ograve Oacute Ocirc Otilde Ouml times Oslash Ugrave Uacute Ucirc Uuml Yacute THORN szlig agrave aacute acirc atilde auml aring aelig ccedil egrave eacute ecirc euml igrave iacute icirc iuml eth ntilde ograve oacute ocirc otilde ouml divide oslash ugrave uacute ucirc uuml yacute thorn yuml".split(" ");
+  const map = {
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: "\"",
+    apos: "'",
+  };
+  for (let index = 0; index < names.length; index += 1) {
+    map[names[index]] = String.fromCharCode(160 + index);
+  }
+  const extra = {
+    OElig: 338,
+    oelig: 339,
+    Scaron: 352,
+    scaron: 353,
+    Yuml: 376,
+    fnof: 402,
+    circ: 710,
+    tilde: 732,
+    ensp: 8194,
+    emsp: 8195,
+    thinsp: 8201,
+    zwnj: 8204,
+    zwj: 8205,
+    lrm: 8206,
+    rlm: 8207,
+    ndash: 8211,
+    mdash: 8212,
+    lsquo: 8216,
+    rsquo: 8217,
+    sbquo: 8218,
+    ldquo: 8220,
+    rdquo: 8221,
+    bdquo: 8222,
+    dagger: 8224,
+    Dagger: 8225,
+    bull: 8226,
+    hellip: 8230,
+    permil: 8240,
+    prime: 8242,
+    Prime: 8243,
+    lsaquo: 8249,
+    rsaquo: 8250,
+    euro: 8364,
+    trade: 8482,
+  };
+  for (const name of Object.keys(extra)) {
+    map[name] = String.fromCharCode(extra[name]);
+  }
+  htmlEntityMap.table = map;
+  return map;
+}
+
+function isHtmlCodePoint(code) {
+  return Number.isInteger(code) && code >= 0 && code <= 0x10FFFF && (code < 0xD800 || code > 0xDFFF);
+}
+
+function isAsciiDigit(char) {
+  const code = char.charCodeAt(0);
+  return code >= 48 && code <= 57;
+}
+
+function isAsciiHex(char) {
+  const code = char.charCodeAt(0);
+  return isAsciiDigit(char) || (code >= 65 && code <= 70) || (code >= 97 && code <= 102);
+}
+
+function isAsciiLetter(char) {
+  const code = char.charCodeAt(0);
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122);
+}
+
+function readHtmlEntity(text, start) {
+  let index = start + 1;
+  if (index >= text.length) {
+    return null;
+  }
+  if (text.charAt(index) === "#") {
+    index += 1;
+    const hex = text.charAt(index) === "x" || text.charAt(index) === "X";
+    if (hex) {
+      index += 1;
+    }
+    const digitStart = index;
+    const digit = hex ? isAsciiHex : isAsciiDigit;
+    while (index < text.length && index - digitStart < 7 && digit(text.charAt(index))) {
+      index += 1;
+    }
+    if (index === digitStart || digit(text.charAt(index))) {
+      return null;
+    }
+    const code = parseInt(text.slice(digitStart, index), hex ? 16 : 10);
+    if (!isHtmlCodePoint(code)) {
+      return null;
+    }
+    if (text.charAt(index) === ";") {
+      index += 1;
+    }
+    return { char: String.fromCodePoint(code), next: index };
+  }
+  if (!isAsciiLetter(text.charAt(index))) {
+    return null;
+  }
+  const nameStart = index;
+  index += 1;
+  while (index < text.length && index - nameStart < 32 && (isAsciiLetter(text.charAt(index)) || isAsciiDigit(text.charAt(index)))) {
+    index += 1;
+  }
+  if (index - nameStart >= 32 && (isAsciiLetter(text.charAt(index)) || isAsciiDigit(text.charAt(index)))) {
+    return null;
+  }
+  const name = text.slice(nameStart, index);
+  const map = htmlEntityMap();
+  if (!Object.prototype.hasOwnProperty.call(map, name)) {
+    return null;
+  }
+  if (text.charAt(index) === ";") {
+    return { char: map[name], next: index + 1 };
+  }
+  if (name !== "amp" && name !== "lt" && name !== "gt" && name !== "quot" && name !== "apos") {
+    return null;
+  }
+  return { char: map[name], next: index };
+}
+
+function htmlEntitiesText(value) {
+  const text = cleanDecodeText(value);
+  const parts = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charAt(index) !== "&") {
+      parts.push(text.charAt(index));
+      continue;
+    }
+    const entity = readHtmlEntity(text, index);
+    if (!entity) {
+      parts.push("&");
+      continue;
+    }
+    parts.push(entity.char);
+    index = entity.next - 1;
+  }
+  return parts.join("");
+}
+
+function fourHexDigits(value) {
+  if (value.length !== 4) {
+    return false;
+  }
+  for (let index = 0; index < 4; index += 1) {
+    if (!isAsciiHex(value.charAt(index))) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function unescapeJsText(value) {
+  const text = cleanDecodeText(value);
+  const parts = [];
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charAt(index) !== "\\") {
+      parts.push(text.charAt(index));
+      continue;
+    }
+    const next = text.charAt(index + 1);
+    if (!next) {
+      parts.push("\\");
+      break;
+    }
+    if (next === "\\" || next === "\"" || next === "'" || next === "/") {
+      parts.push(next);
+      index += 1;
+      continue;
+    }
+    if (next === "b") {
+      parts.push("\b");
+      index += 1;
+      continue;
+    }
+    if (next === "f") {
+      parts.push("\f");
+      index += 1;
+      continue;
+    }
+    if (next === "n") {
+      parts.push("\n");
+      index += 1;
+      continue;
+    }
+    if (next === "r") {
+      parts.push("\r");
+      index += 1;
+      continue;
+    }
+    if (next === "t") {
+      parts.push("\t");
+      index += 1;
+      continue;
+    }
+    if (next === "v") {
+      parts.push("\v");
+      index += 1;
+      continue;
+    }
+    if (next === "\n") {
+      index += 1;
+      continue;
+    }
+    if (next === "\r") {
+      index += text.charAt(index + 2) === "\n" ? 2 : 1;
+      continue;
+    }
+    if (next === "u" && text.charAt(index + 2) === "{") {
+      const end = text.indexOf("}", index + 3);
+      const body = end < 0 ? "" : text.slice(index + 3, end);
+      let code = NaN;
+      if (end >= 0 && body.length >= 1 && body.length <= 6) {
+        let hex = true;
+        for (let cursor = 0; cursor < body.length; cursor += 1) {
+          if (!isAsciiHex(body.charAt(cursor))) {
+            hex = false;
+            break;
+          }
+        }
+        if (hex) {
+          code = parseInt(body, 16);
+        }
+      }
+      if (isHtmlCodePoint(code)) {
+        parts.push(String.fromCodePoint(code));
+        index = end;
+        continue;
+      }
+      parts.push("\\");
+      continue;
+    }
+    if (next === "u") {
+      const hex = text.slice(index + 2, index + 6);
+      if (!fourHexDigits(hex)) {
+        parts.push("\\");
+        continue;
+      }
+      const code = parseInt(hex, 16);
+      const tail = text.slice(index + 6, index + 12);
+      if (code >= 0xD800 && code <= 0xDBFF && tail.charAt(0) === "\\" && tail.charAt(1) === "u" && fourHexDigits(tail.slice(2))) {
+        const low = parseInt(tail.slice(2), 16);
+        if (low >= 0xDC00 && low <= 0xDFFF) {
+          parts.push(String.fromCodePoint(0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)));
+          index += 11;
+          continue;
+        }
+      }
+      parts.push(String.fromCharCode(code));
+      index += 5;
+      continue;
+    }
+    if (next === "x") {
+      const hex = text.slice(index + 2, index + 4);
+      if (hex.length === 2 && isAsciiHex(hex.charAt(0)) && isAsciiHex(hex.charAt(1))) {
+        parts.push(String.fromCharCode(parseInt(hex, 16)));
+        index += 3;
+        continue;
+      }
+      parts.push("\\");
+      continue;
+    }
+    parts.push("\\");
+  }
+  return parts.join("");
+}
+
+function xmlNameStart(char) {
+  const code = char.charCodeAt(0);
+  return (code >= 65 && code <= 90) || (code >= 97 && code <= 122) || char === "_" || char === ":" || code > 127;
+}
+
+function xmlNameChar(char) {
+  const code = char.charCodeAt(0);
+  return xmlNameStart(char) || (code >= 48 && code <= 57) || char === "-" || char === ".";
+}
+
+function readXmlBang(text, start) {
+  let quote = "";
+  let brackets = 0;
+  for (let index = start + 2; index < text.length; index += 1) {
+    const char = text.charAt(index);
+    if (quote) {
+      if (char === quote) {
+        quote = "";
+      }
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "[") {
+      brackets += 1;
+      continue;
+    }
+    if (char === "]") {
+      if (brackets > 0) {
+        brackets -= 1;
+      }
+      continue;
+    }
+    if (char === ">" && brackets === 0) {
+      return { kind: "meta", raw: text.slice(start, index + 1), next: index + 1 };
+    }
+  }
+  return null;
+}
+
+function readXmlTag(text, start) {
+  let index = start + 1;
+  let closing = false;
+  if (text.charAt(index) === "/") {
+    closing = true;
+    index += 1;
+  }
+  if (!xmlNameStart(text.charAt(index))) {
+    return null;
+  }
+  index += 1;
+  while (xmlNameChar(text.charAt(index))) {
+    index += 1;
+  }
+  let quote = "";
+  for (; index < text.length; index += 1) {
+    const char = text.charAt(index);
+    if (quote) {
+      if (char === quote) {
+        quote = "";
+      }
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char !== ">") {
+      continue;
+    }
+    const raw = text.slice(start, index + 1);
+    let kind = "open";
+    if (closing) {
+      kind = "close";
+    } else if (/\/\s*>$/.test(raw)) {
+      kind = "self";
+    }
+    return { kind, raw, next: index + 1 };
+  }
+  return null;
+}
+
+function readXmlMarkup(text, start) {
+  if (text.charAt(start) !== "<" || start + 1 >= text.length) {
+    return null;
+  }
+  if (text.startsWith("<!--", start)) {
+    const end = text.indexOf("-->", start + 4);
+    if (end < 0) {
+      return null;
+    }
+    return { kind: "meta", raw: text.slice(start, end + 3), next: end + 3 };
+  }
+  if (text.startsWith("<![CDATA[", start)) {
+    const end = text.indexOf("]]>", start + 9);
+    if (end < 0) {
+      return null;
+    }
+    return { kind: "meta", raw: text.slice(start, end + 3), next: end + 3 };
+  }
+  if (text.charAt(start + 1) === "?") {
+    const end = text.indexOf("?>", start + 2);
+    if (end < 0) {
+      return null;
+    }
+    return { kind: "meta", raw: text.slice(start, end + 2), next: end + 2 };
+  }
+  if (text.charAt(start + 1) === "!") {
+    return readXmlBang(text, start);
+  }
+  return readXmlTag(text, start);
+}
+
+function xmlTokens(text) {
+  const tokens = [];
+  let textStart = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    if (text.charAt(index) !== "<") {
+      continue;
+    }
+    const token = readXmlMarkup(text, index);
+    if (!token || token.next <= index) {
+      continue;
+    }
+    if (index > textStart) {
+      tokens.push({ kind: "text", raw: text.slice(textStart, index) });
+    }
+    tokens.push({ kind: token.kind, raw: token.raw });
+    index = token.next - 1;
+    textStart = token.next;
+  }
+  if (textStart < text.length) {
+    tokens.push({ kind: "text", raw: text.slice(textStart) });
+  }
+  return tokens;
+}
+
+function prettyXmlText(value) {
+  let text = cleanDecodeText(value);
+  if ((text.startsWith("\"") && text.endsWith("\"") && text.length > 2) || (text.startsWith("'") && text.endsWith("'") && text.length > 2)) {
+    const inner = text.slice(1, -1).trim();
+    if (inner.startsWith("<")) {
+      text = inner;
+    }
+  }
+  const tokens = xmlTokens(text);
+  let tags = 0;
+  for (const token of tokens) {
+    if (token.kind === "open" || token.kind === "close" || token.kind === "self") {
+      tags += 1;
+    }
+  }
+  if (!tags) {
+    throw new Error("Выделенный текст не является XML.");
+  }
+  const lines = [];
+  let depth = 0;
+  for (const token of tokens) {
+    if (token.kind === "text") {
+      const body = token.raw.trim();
+      if (body) {
+        lines.push(`${"  ".repeat(depth)}${body}`);
+      }
+      continue;
+    }
+    if (token.kind === "close") {
+      depth = Math.max(0, depth - 1);
+    }
+    lines.push(`${"  ".repeat(depth)}${token.raw}`);
+    if (token.kind === "open") {
+      depth += 1;
+    }
+  }
+  return lines.join("\n");
+}
+
 function nodeInDecodeSource(node) {
   const el = node && node.nodeType === 1 ? node : node && node.parentElement;
   if (!el || typeof el.closest !== "function") {
@@ -1337,11 +1884,177 @@ function selectionRecord(selection) {
   if (!nodeInDecodeSource(selection.anchorNode) || !nodeInDecodeSource(selection.focusNode)) {
     return null;
   }
-  const text = cleanDecodeText(selection.toString());
+  const text = cleanDecodeText(decodeRangeText(selection.getRangeAt(0)));
   if (!text) {
     return null;
   }
   return { text, range: selection.getRangeAt(0).cloneRange() };
+}
+
+function elementClassName(el) {
+  if (!el || el.nodeType !== 1) {
+    return "";
+  }
+  return typeof el.className === "string" ? el.className : "";
+}
+
+function hasLineNumberClass(el) {
+  const className = elementClassName(el);
+  return /(?:^|\s)(?:line-numbers(?:-rows)?|line-number|gutter|hljs-ln-numbers)(?:\s|$)/i.test(className)
+    || /line[-_]?number/i.test(className);
+}
+
+function isLineNumberElement(el) {
+  if (!el || el.nodeType !== 1 || !el.classList) {
+    return false;
+  }
+  if (el.classList.contains("token") || (typeof el.closest === "function" && el.closest(".token"))) {
+    return false;
+  }
+  if (hasLineNumberClass(el)) {
+    return !(el.querySelector && el.querySelector(".token, .line"));
+  }
+  const text = String(el.textContent || "").replace(/\u00a0/g, " ").trim();
+  if (el.getAttribute && el.getAttribute("aria-hidden") === "true" && /^\d{1,6}$/.test(text)) {
+    return true;
+  }
+  if (!/^\d{1,6}$/.test(text) || typeof el.closest !== "function") {
+    return false;
+  }
+  const line = el.closest(".line");
+  if (!line || el === line || !line.contains(el)) {
+    return false;
+  }
+  if (el.querySelector && el.querySelector(".token, .line")) {
+    return false;
+  }
+  const lineText = String(line.textContent || "").replace(/\u00a0/g, " ").trim();
+  return lineText !== text;
+}
+
+function textNodeIsLineNumber(node) {
+  let el = node && node.parentElement;
+  while (el) {
+    if (isLineNumberElement(el)) {
+      return true;
+    }
+    if (el.classList && el.classList.contains("line")) {
+      break;
+    }
+    const tag = el.tagName;
+    if (tag === "CODE" || tag === "PRE" || tag === "PTAF-PRISM" || tag === "PTAF-PRISM-HIGHLIGHT") {
+      break;
+    }
+    el = el.parentElement;
+  }
+  return false;
+}
+
+function textNodeIsLeadingLineNumber(node) {
+  const parent = node && node.parentElement;
+  if (!parent || parent.classList.contains("token") || (typeof parent.closest === "function" && parent.closest(".token"))) {
+    return false;
+  }
+  const value = String(node.nodeValue || "").replace(/\u00a0/g, " ");
+  if (!/^\s*\d{1,6}\s*$/.test(value)) {
+    return false;
+  }
+  const line = typeof parent.closest === "function" ? parent.closest(".line") : null;
+  if (!line) {
+    return false;
+  }
+  const own = value.trim();
+  const lineText = String(line.textContent || "").replace(/\u00a0/g, " ").trim();
+  if (!own || lineText === own) {
+    return false;
+  }
+  let owner = node.parentElement;
+  while (owner && owner !== line) {
+    let sibling = owner.previousSibling;
+    while (sibling) {
+      if (String(sibling.textContent || "").trim()) {
+        return false;
+      }
+      sibling = sibling.previousSibling;
+    }
+    owner = owner.parentElement;
+  }
+  let sibling = node.previousSibling;
+  while (sibling) {
+    if (String(sibling.textContent || "").trim()) {
+      return false;
+    }
+    sibling = sibling.previousSibling;
+  }
+  return true;
+}
+
+function closestDecodeLine(node) {
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  if (!el || typeof el.closest !== "function") {
+    return null;
+  }
+  return el.closest(".line");
+}
+
+function textNodeRangeValue(node, range) {
+  const value = node.nodeValue || "";
+  let start = 0;
+  let end = value.length;
+  if (node === range.startContainer) {
+    start = range.startOffset;
+  }
+  if (node === range.endContainer) {
+    end = range.endOffset;
+  }
+  if (end < start) {
+    return "";
+  }
+  return value.slice(start, end);
+}
+
+function decodeRangeText(range) {
+  if (!range) {
+    return "";
+  }
+  const root = range.commonAncestorContainer;
+  const scope = root && root.nodeType === 1 ? root : root && root.parentElement;
+  if (!scope || typeof document.createTreeWalker !== "function" || typeof range.intersectsNode !== "function") {
+    return range.toString();
+  }
+  const doc = scope.ownerDocument || document;
+  let text = "";
+  let line = null;
+  let lineHasContent = false;
+  const walker = doc.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (!range.intersectsNode(node) || textNodeIsLineNumber(node) || textNodeIsLeadingLineNumber(node)) {
+      continue;
+    }
+    const value = textNodeRangeValue(node, range);
+    if (!value) {
+      continue;
+    }
+    const nextLine = closestDecodeLine(node);
+    if (line && nextLine && nextLine !== line) {
+      if (!text.endsWith("\n")) {
+        text += "\n";
+      }
+      lineHasContent = false;
+    }
+    if (nextLine) {
+      line = nextLine;
+    }
+    if (!lineHasContent && !value.trim()) {
+      continue;
+    }
+    text += value;
+    if (value.trim()) {
+      lineHasContent = true;
+    }
+  }
+  return text;
 }
 
 function pushSelection(list, selection) {
@@ -1432,25 +2145,45 @@ function hideDecodePop() {
   }
 }
 
-function placeDecodePop(host, rect) {
-  const margin = 8;
-  const width = host.offsetWidth || 0;
-  const height = host.offsetHeight || 0;
-  let left = rect.left;
-  let top = rect.bottom + margin;
-  const maxLeft = Math.max(margin, window.innerWidth - width - margin);
-  if (left > maxLeft) {
-    left = maxLeft;
-  }
-  if (left < margin) {
+function placeDecodePop(host) {
+  const margin = 16;
+  const anchor = decodeAnchorRect();
+  let top = margin;
+  let height = window.innerHeight - margin * 2;
+  let width = Math.min(720, Math.max(420, window.innerWidth * 0.42));
+  let left = margin;
+  if (anchor && anchor.left > width + margin * 2) {
+    top = Math.max(margin, anchor.top);
+    const bottom = Math.min(window.innerHeight - margin, anchor.bottom);
+    height = Math.max(320, bottom - top);
+    width = Math.max(420, Math.min(760, anchor.left - margin * 2));
+    left = Math.max(margin, anchor.left - width - margin);
+  } else if (anchor) {
+    top = Math.max(margin, anchor.top);
+    const bottom = Math.min(window.innerHeight - margin, anchor.bottom);
+    height = Math.max(320, bottom - top);
+    width = Math.max(420, Math.min(760, Math.floor(window.innerWidth * 0.4)));
     left = margin;
-  }
-  if (top + height > window.innerHeight - margin) {
-    const above = rect.top - height - margin;
-    top = above >= margin ? above : margin;
   }
   host.style.left = `${Math.round(left)}px`;
   host.style.top = `${Math.round(top)}px`;
+  host.style.width = `${Math.round(width)}px`;
+  host.style.height = `${Math.round(height)}px`;
+}
+
+function decodeAnchorRect() {
+  const prism = document.querySelector("ptaf-events ptaf-prism, ptaf-prism");
+  const modal = (prism && prism.closest && prism.closest(".waf-modal-active, .modal-layer"))
+    || document.querySelector("ptaf-events .waf-modal-active")
+    || document.querySelector(".waf-modal-active");
+  if (!modal || !modal.getBoundingClientRect) {
+    return null;
+  }
+  const rect = modal.getBoundingClientRect();
+  if (rect.width < 40 || rect.height < 40) {
+    return null;
+  }
+  return rect;
 }
 
 function decodeAction(kind, label) {
@@ -1462,6 +2195,16 @@ function decodeAction(kind, label) {
     button.title = "Раскрыть percent-encoding, %XX";
   } else if (kind === "base64") {
     button.title = "Декодировать Base64";
+  } else if (kind === "jwt") {
+    button.title = "Показать заголовок и payload JWT. Подпись не проверяется";
+  } else if (kind === "json") {
+    button.title = "Показать JSON с отступами";
+  } else if (kind === "html") {
+    button.title = "Раскрыть HTML-сущности";
+  } else if (kind === "unescape") {
+    button.title = "Раскрыть \\u, \\x и экранирование строк JavaScript и JSON";
+  } else if (kind === "xml") {
+    button.title = "Показать XML с отступами";
   }
   return button;
 }
@@ -1476,15 +2219,21 @@ function ensureDecodeHost() {
   }
   const host = document.createElement("div");
   host.id = DECODE_ID;
-  host.style.cssText = "all:initial;display:block;position:fixed;z-index:2147483647;width:max-content;max-width:min(640px,calc(100vw - 16px));";
+  host.style.cssText = "all:initial;display:flex;position:fixed;z-index:2147483647;box-sizing:border-box;";
   const theme = typeof attachUi === "function" ? attachUi(host) : null;
   if (!theme) {
     host.remove();
     eventToast("Не удалось открыть декодирование.");
     return null;
   }
+  theme.style.height = "100%";
+  theme.style.display = "flex";
+  theme.style.flexDirection = "column";
+  theme.style.minHeight = "0";
   const pop = document.createElement("div");
   pop.className = "ptaf-decode";
+  pop.style.flex = "1 1 auto";
+  pop.style.minHeight = "0";
   pop.setAttribute("role", "dialog");
   pop.setAttribute("aria-label", "Декодирование выделенного текста");
   const actions = document.createElement("div");
@@ -1492,6 +2241,11 @@ function ensureDecodeHost() {
   actions.append(
     decodeAction("url", "URL Decode"),
     decodeAction("base64", "Base64 decode"),
+    decodeAction("jwt", "JWT decode"),
+    decodeAction("json", "Pretty JSON"),
+    decodeAction("html", "HTML entities"),
+    decodeAction("unescape", "JS unescape"),
+    decodeAction("xml", "Pretty XML"),
     decodeAction("copy", "Копировать"),
     decodeAction("close", "Закрыть")
   );
@@ -1506,20 +2260,15 @@ function ensureDecodeHost() {
   protectPlainNode(out);
   pop.append(actions, caption, out);
   pop.addEventListener("mousedown", (event) => {
-    event.stopPropagation();
+    if (event.button !== 0) {
+      return;
+    }
     const button = event.target && event.target.closest ? event.target.closest("button") : null;
-    if (!button || event.button !== 0) {
+    if (!button) {
       return;
     }
     event.preventDefault();
-    const kind = button.dataset.decode;
-    if (kind === "url" || kind === "base64") {
-      runDecode(kind);
-    } else if (kind === "copy") {
-      copyDecodeResult();
-    } else if (kind === "close") {
-      hideDecodePop();
-    }
+    runDecodeButton(button);
   });
   for (const type of ["mouseup", "pointerdown", "pointerup", "click", "auxclick", "contextmenu", "wheel"]) {
     pop.addEventListener(type, (event) => event.stopPropagation());
@@ -1537,7 +2286,7 @@ function showDecodePop(picked) {
   if (same && picked.text === decodeOrigin) {
     decodeRange = picked.range;
     same.style.visibility = "visible";
-    placeDecodePop(same, selectionRect(picked.range));
+    placeDecodePop(same);
     return;
   }
   const host = ensureDecodeHost();
@@ -1558,17 +2307,37 @@ function showDecodePop(picked) {
   if (!host.isConnected) {
     document.body.append(host);
   }
-  placeDecodePop(host, selectionRect(picked.range));
+  placeDecodePop(host);
   host.style.visibility = "visible";
   const link = host.shadowRoot.querySelector("link");
   if (link && !link.sheet) {
     link.addEventListener("load", () => {
-      if (host.isConnected && decodeRange) {
-        placeDecodePop(host, selectionRect(decodeRange));
+      if (host.isConnected) {
+        placeDecodePop(host);
       }
     }, { once: true });
   }
 }
+
+function runDecodeButton(button) {
+  if (!button) {
+    return;
+  }
+  const now = Date.now();
+  if (now - runDecodeButton.at < 30) {
+    return;
+  }
+  runDecodeButton.at = now;
+  const kind = button.dataset.decode;
+  if (kind === "url" || kind === "base64" || kind === "jwt" || kind === "json" || kind === "html" || kind === "unescape" || kind === "xml") {
+    runDecode(kind);
+  } else if (kind === "copy") {
+    copyDecodeResult();
+  } else if (kind === "close") {
+    hideDecodePop();
+  }
+}
+runDecodeButton.at = 0;
 
 function runDecode(kind) {
   const input = currentDecodeInput();
@@ -1577,13 +2346,35 @@ function runDecode(kind) {
   }
   let output = "";
   try {
-    output = kind === "base64" ? base64DecodeText(input) : urlDecodeText(input);
+    if (kind === "base64") {
+      output = base64DecodeText(input);
+    } else if (kind === "jwt") {
+      output = jwtDecodeText(input);
+    } else if (kind === "json") {
+      output = prettyJsonText(input);
+    } else if (kind === "html") {
+      output = htmlEntitiesText(input);
+    } else if (kind === "unescape") {
+      output = unescapeJsText(input);
+    } else if (kind === "xml") {
+      output = prettyXmlText(input);
+    } else {
+      output = urlDecodeText(input);
+    }
   } catch (error) {
     eventToast((error && error.message) || "Не удалось декодировать.");
     return;
   }
   if (output === input) {
-    eventToast(kind === "base64" ? "Декодирование Base64 не изменило текст." : "В выделенном тексте нет URL-кодирования.");
+    const unchanged = {
+      base64: "Декодирование Base64 не изменило текст.",
+      jwt: "Выделенный текст не похож на JWT.",
+      json: "JSON уже показан с отступами.",
+      html: "В выделенном тексте нет HTML-сущностей.",
+      unescape: "В выделенном тексте нет экранирования JavaScript или JSON.",
+      xml: "XML уже показан с отступами.",
+    };
+    eventToast(unchanged[kind] || "В выделенном тексте нет URL-кодирования.");
     return;
   }
   const host = document.getElementById(DECODE_ID);
@@ -1594,17 +2385,19 @@ function runDecode(kind) {
   const out = host.shadowRoot.querySelector(".ptaf-decode-out");
   const copy = host.shadowRoot.querySelector("[data-decode='copy']");
   caption.hidden = false;
-  caption.textContent = kind === "base64" ? "Base64 decode" : "URL Decode";
+  const captions = {
+    base64: "Base64 decode",
+    jwt: "JWT decode",
+    json: "Pretty JSON",
+    html: "HTML entities",
+    unescape: "JS unescape",
+    xml: "Pretty XML",
+  };
+  caption.textContent = captions[kind] || "URL Decode";
   setPlainText(out, output);
   out.hidden = false;
   copy.hidden = false;
-  if (decodeRange) {
-    const node = decodeRange.commonAncestorContainer;
-    const el = node && (node.nodeType === 1 ? node : node.parentElement);
-    if (el && el.isConnected) {
-      placeDecodePop(host, selectionRect(decodeRange));
-    }
-  }
+  placeDecodePop(host);
 }
 
 function copyWithTextarea(text) {
@@ -1666,6 +2459,7 @@ function syncDecodeFromSelection() {
   if (eventStopped || !decodeWatching) {
     return;
   }
+  ensureDecodeSelectStyle();
   const picked = readPageDecodeSelection();
   if (picked) {
     showDecodePop(picked);
@@ -1680,36 +2474,69 @@ function syncDecodeFromSelection() {
 }
 
 function eventInDecodePop(event) {
-  if (event.target && event.target.id === DECODE_ID) {
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
+  if (path.some((node) => node && (node.id === DECODE_ID || (node.classList && node.classList.contains("ptaf-decode"))))) {
     return true;
   }
+  const target = path[0] || event.target;
+  if (target && target.id === DECODE_ID) {
+    return true;
+  }
+  const root = target && typeof target.getRootNode === "function" ? target.getRootNode() : null;
+  return Boolean(root && root.host && root.host.id === DECODE_ID);
+}
+
+function decodeButtonFromEvent(event) {
   const path = typeof event.composedPath === "function" ? event.composedPath() : [];
-  return path.some((node) => node && node.id === DECODE_ID);
+  for (const node of path) {
+    if (node && node.dataset && node.dataset.decode) {
+      return node;
+    }
+  }
+  const target = event.target;
+  return target && target.closest ? target.closest("button[data-decode]") : null;
 }
 
 function onDecodeMouseDown(event) {
-  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
   if (eventInDecodePop(event)) {
+    decodeInteracting = true;
     decodePointerInSource = false;
+    event.stopPropagation();
+    const button = decodeButtonFromEvent(event);
+    if (button && event.button === 0) {
+      event.preventDefault();
+      runDecodeButton(button);
+    }
     return;
   }
+  decodeInteracting = false;
+  const path = typeof event.composedPath === "function" ? event.composedPath() : [];
   decodePointerInSource = nodeInDecodeSource(path[0] || event.target);
   if (!decodePointerInSource && document.getElementById(DECODE_ID)) {
     hideDecodePop();
   }
 }
 
+function onDecodePopEvent(event) {
+  if (!eventInDecodePop(event)) {
+    return;
+  }
+  decodeInteracting = true;
+  event.stopPropagation();
+}
+
 function onDecodePointerUp(event) {
   if (eventStopped || !decodeWatching) {
     return;
   }
-  if (eventInDecodePop(event)) {
+  if (eventInDecodePop(event) || decodeInteracting) {
+    decodeInteracting = false;
     return;
   }
   const startedInside = decodePointerInSource;
   decodePointerInSource = false;
   window.setTimeout(() => {
-    if (!decodeWatching || eventStopped) {
+    if (!decodeWatching || eventStopped || decodeInteracting) {
       return;
     }
     if (startedInside) {
@@ -1744,35 +2571,45 @@ function onDecodeKeyDown(event) {
 
 function onDecodeScroll(event) {
   const host = document.getElementById(DECODE_ID);
-  if (!host || !decodeRange) {
+  if (!host) {
     return;
   }
   if (event && eventInDecodePop(event)) {
     return;
   }
-  const node = decodeRange.commonAncestorContainer;
-  const el = node && (node.nodeType === 1 ? node : node.parentElement);
-  if (!el || !el.isConnected) {
-    hideDecodePop();
-    return;
-  }
-  const rect = selectionRect(decodeRange);
-  if (!rect || (rect.width === 0 && rect.height === 0) || rect.bottom < 0 || rect.top > window.innerHeight || rect.right < 0 || rect.left > window.innerWidth) {
-    host.style.visibility = "hidden";
-    return;
-  }
   host.style.visibility = "visible";
-  placeDecodePop(host, rect);
+  placeDecodePop(host);
+}
+
+function decodeSelectRoots() {
+  const roots = [document.head || document.documentElement];
+  document.querySelectorAll("ptaf-prism, ptaf-prism-highlight").forEach((node) => {
+    if (node.shadowRoot) {
+      roots.push(node.shadowRoot);
+    }
+  });
+  return roots;
 }
 
 function ensureDecodeSelectStyle() {
-  if (document.getElementById(DECODE_STYLE_ID)) {
-    return;
-  }
-  const style = document.createElement("style");
-  style.id = DECODE_STYLE_ID;
-  style.textContent = "ptaf-prism code,ptaf-prism code *,ptaf-prism .line,ptaf-prism .line *{-webkit-user-select:text !important;user-select:text !important;}";
-  (document.head || document.documentElement).append(style);
+  const css = [
+    "ptaf-prism code,ptaf-prism code *,ptaf-prism .line,ptaf-prism .line *,code,code *,.line,.line *{",
+    "-webkit-user-select:text !important;user-select:text !important;}",
+    "ptaf-prism .line .line-number,ptaf-prism .line .line-numbers,ptaf-prism .line .gutter,",
+    "ptaf-prism code .line-number,ptaf-prism code .gutter,ptaf-prism .line [class*='line-number'],",
+    "ptaf-prism .line [class*='lineNumber'],.line .line-number,.line .line-numbers,.line .gutter,",
+    "code .line-number,code .gutter,.line [class*='line-number'],.line [class*='lineNumber']{",
+    "-webkit-user-select:none !important;user-select:none !important;}",
+  ].join("");
+  decodeSelectRoots().forEach((root) => {
+    if (!root || root.querySelector(`#${DECODE_STYLE_ID}`)) {
+      return;
+    }
+    const style = document.createElement("style");
+    style.id = DECODE_STYLE_ID;
+    style.textContent = css;
+    root.append(style);
+  });
 }
 
 function watchDecode() {
@@ -1783,6 +2620,10 @@ function watchDecode() {
   ensureDecodeSelectStyle();
   document.addEventListener("copy", onAttackCopy, true);
   window.addEventListener("mousedown", onDecodeMouseDown, true);
+  window.addEventListener("pointerdown", onDecodePopEvent, true);
+  window.addEventListener("pointerup", onDecodePopEvent, true);
+  window.addEventListener("click", onDecodePopEvent, true);
+  window.addEventListener("auxclick", onDecodePopEvent, true);
   document.addEventListener("pointerup", onDecodePointerUp);
   document.addEventListener("keyup", onDecodeKeyUp);
   window.addEventListener("keydown", onDecodeKeyDown, true);
@@ -1794,16 +2635,22 @@ function stopDecode() {
   decodeWatching = false;
   document.removeEventListener("copy", onAttackCopy, true);
   window.removeEventListener("mousedown", onDecodeMouseDown, true);
+  window.removeEventListener("pointerdown", onDecodePopEvent, true);
+  window.removeEventListener("pointerup", onDecodePopEvent, true);
+  window.removeEventListener("click", onDecodePopEvent, true);
+  window.removeEventListener("auxclick", onDecodePopEvent, true);
   document.removeEventListener("pointerup", onDecodePointerUp);
   document.removeEventListener("keyup", onDecodeKeyUp);
   window.removeEventListener("keydown", onDecodeKeyDown, true);
   window.removeEventListener("scroll", onDecodeScroll, true);
   window.removeEventListener("resize", onDecodeScroll);
   hideDecodePop();
-  const style = document.getElementById(DECODE_STYLE_ID);
-  if (style) {
-    style.remove();
-  }
+  decodeSelectRoots().forEach((root) => {
+    const style = root && root.querySelector && root.querySelector(`#${DECODE_STYLE_ID}`);
+    if (style) {
+      style.remove();
+    }
+  });
 }
 
 function scheduleEvents() {
@@ -1865,8 +2712,8 @@ function applyDecodeSetting(enabled) {
   watchDecode();
 }
 if (typeof pluginSetting === "function") {
-  pluginSetting("eventImport", "experimental", applyEventExperimental);
-  pluginSetting("eventDownload", true, (enabled) => {
+  pluginSetting("eventImport", false, applyEventExperimental);
+  pluginSetting("eventDownload", false, (enabled) => {
     eventDownloadEnabled = enabled;
     scheduleEvents();
   });

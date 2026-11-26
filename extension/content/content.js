@@ -188,13 +188,13 @@ function surfaceLuminance() {
       return direct;
     }
   }
-  const skip = new Set([BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-traffic-open", "ptaf-traffic-dialog", "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-dash-view", "ptaf-dash-submenu", "ptaf-rule-select-bar", "ptaf-rule-select-dialog", "ptaf-filter-bar"]);
+  const skip = new Set([BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-traffic-open", "ptaf-traffic-dialog", "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-exclusions-open", "ptaf-exclusions-panel", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-dash-view", "ptaf-dash-submenu", "ptaf-rule-select-bar", "ptaf-rule-select-dialog", "ptaf-filter-bar", "ptaf-policy-sync", "ptaf-rule-builder"]);
   let node = document.elementFromPoint(
     Math.max(0, Math.floor(window.innerWidth / 2)),
     Math.max(0, Math.floor(window.innerHeight / 2))
   );
   for (let guard = 0; node && guard < 12; guard += 1) {
-    if (skip.has(node.id)) {
+    if (skip.has(node.id) || (node.classList && node.classList.contains("ptaf-re-host"))) {
       node = node.parentElement;
       continue;
     }
@@ -223,12 +223,15 @@ function pageTheme() {
 
 function syncTheme() {
   const theme = pageTheme();
-  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-dash-view", "ptaf-dash-submenu", "ptaf-rule-select-bar", "ptaf-rule-select-dialog", "ptaf-filter-bar"]) {
+  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-exclusions-open", "ptaf-exclusions-panel", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-dash-view", "ptaf-dash-submenu", "ptaf-rule-select-bar", "ptaf-rule-select-dialog", "ptaf-filter-bar", "ptaf-policy-sync", "ptaf-rule-builder"]) {
     const node = document.getElementById(id);
     const root = node && node.shadowRoot && node.shadowRoot.querySelector(".ptaf-theme");
     if (root) {
       root.dataset.theme = theme;
     }
+  }
+  if (typeof ptafReThemeHosts === "function") {
+    ptafReThemeHosts();
   }
 }
 
@@ -260,7 +263,19 @@ function stopExtension() {
   if (typeof stopFilterBar === "function") {
     stopFilterBar();
   }
-  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-decode-style", "ptaf-dash-view", "ptaf-dash-submenu", "ptaf-rule-select-bar", "ptaf-rule-select-dialog", "ptaf-filter-bar"]) {
+  if (typeof stopExclusions === "function") {
+    stopExclusions();
+  }
+  if (typeof stopPolicySync === "function") {
+    stopPolicySync();
+  }
+  if (typeof stopRuleBuilder === "function") {
+    stopRuleBuilder();
+  }
+  if (typeof stopRegexHelp === "function") {
+    stopRegexHelp();
+  }
+  for (const id of [BUTTON_ID, DIALOG_ID, TOAST_ID, "ptaf-compare-open", "ptaf-compare-dialog", "ptaf-exclusions-open", "ptaf-exclusions-panel", "ptaf-transfer-bar", "ptaf-transfer-download", "ptaf-transfer-dialog", "ptaf-event-view", "ptaf-decode-pop", "ptaf-decode-style", "ptaf-dash-view", "ptaf-dash-submenu", "ptaf-rule-select-bar", "ptaf-rule-select-dialog", "ptaf-filter-bar", "ptaf-policy-sync", "ptaf-rule-builder"]) {
     const node = document.getElementById(id);
     if (node) {
       node.remove();
@@ -376,6 +391,10 @@ function ruleCollections(target) {
   ];
 }
 
+function isPtafUi() {
+  return Boolean(document.querySelector("ptaf-top-panel"));
+}
+
 function getAccessToken() {
   try {
     const stored = JSON.parse(localStorage.getItem("PTAF__AUTHENTICATION") || "{}");
@@ -400,6 +419,11 @@ function errorMessage(status, body) {
 }
 
 async function api(path, options) {
+  if (!isPtafUi()) {
+    const error = new Error(errorMessage(401));
+    error.status = 401;
+    throw error;
+  }
   const token = getAccessToken();
   if (!token) {
     const error = new Error(errorMessage(401));
@@ -508,6 +532,9 @@ function localeCandidates() {
 }
 
 async function loadTypeCaptions() {
+  if (!isPtafUi()) {
+    return {};
+  }
   for (const locale of localeCandidates()) {
     try {
       await ensurePluginUserAgent();
@@ -601,6 +628,9 @@ function textFromLocale(value) {
 }
 
 async function loadLocaleDocument(fileName) {
+  if (!isPtafUi()) {
+    return null;
+  }
   for (const locale of preferredLocales()) {
     try {
       await ensurePluginUserAgent();
