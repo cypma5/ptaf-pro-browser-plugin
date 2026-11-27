@@ -523,7 +523,7 @@ async function syncPolicies() {
     return;
   }
   const wantsFacts = policyEnabled && document.querySelector(`${POLICY_TEMPLATE_NODE}, ${POLICY_APP_NODE}`);
-  const wantsRules = userRulesEnabled && document.querySelector(POLICY_RULES_NODE);
+  const wantsRules = userRulesEnabled && document.querySelector(`${POLICY_RULES_NODE}, .all-rules`);
   if (!wantsFacts && !wantsRules) {
     if (!policyEnabled) {
       hidePolicyFacts();

@@ -6,6 +6,7 @@ const OPTIONS = [
   { id: "policy-list", key: "policyList", fallback: true },
   { id: "user-rule-set", key: "userRuleSet", fallback: true },
   { id: "certificates", key: "certificates", fallback: true },
+  { id: "license-params", key: "licenseParams", fallback: true },
   { id: "event-download", key: "eventDownload", fallback: false },
   { id: "event-import", key: "eventImport", fallback: false },
   { id: "compare-rules", key: "compareRules", fallback: "experimental" },
